@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic-settings
+numpy
+scikit-learn
+faiss-cpu
+rank-bm25
+sentence-transformers
+pypdf
+httpx
+pyyaml
+pytest
+jupyter

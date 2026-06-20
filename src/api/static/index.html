@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IR Research Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="chat-panel" aria-label="IR Research Assistant chatbot">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">RAG over IR papers</p>
+            <h1>IR Research Assistant</h1>
+          </div>
+          <span id="status" class="status">Ready</span>
+        </header>
+
+        <section id="topic-setup" class="topic-setup">
+          <form id="topic-form" class="topic-form">
+            <label for="topic">Research topic</label>
+            <input
+              id="topic"
+              name="topic"
+              type="text"
+              placeholder="dense retrieval, neural ranking, query expansion..."
+              required
+            />
+            <div class="topic-row">
+              <label for="max-papers">PDF target</label>
+              <input id="max-papers" type="number" min="1" max="150" value="100" />
+              <button type="submit">Prepare</button>
+            </div>
+          </form>
+          <p id="topic-help" class="topic-help">
+            The system will search arXiv, download related PDFs, build a FAISS index, then enable chat for this topic.
+          </p>
+        </section>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <div class="bubble">
+              Choose a research topic first. After indexing finishes, ask questions about the downloaded papers.
+            </div>
+          </article>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <textarea
+            id="question"
+            name="question"
+            rows="2"
+            placeholder="Ask a question about your IR papers..."
+            required
+          ></textarea>
+          <div class="composer-actions">
+            <label>
+              Sources
+              <input id="top-k" type="number" min="1" max="20" value="5" />
+            </label>
+            <button type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+def recall_at_k(relevant_ids: set[str], retrieved_ids: list[str], k: int) -> float:
+    if not relevant_ids:
+        return 0.0
+    return len(relevant_ids.intersection(retrieved_ids[:k])) / len(relevant_ids)
