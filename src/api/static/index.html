@@ -33,6 +33,52 @@
               <button type="submit">Prepare</button>
             </div>
           </form>
+          <div id="progress-container" class="progress-container is-hidden">
+            <div class="progress-header">
+              <span id="progress-stage-title" class="progress-stage-title">Initializing...</span>
+              <span id="progress-percentage" class="progress-percentage">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div id="progress-bar-fill" class="progress-bar-fill"></div>
+            </div>
+            <div class="progress-message" id="progress-message">Starting processing...</div>
+            
+            <ul class="progress-stages-list">
+              <li id="stage-searching" class="progress-stage-item pending">
+                <span class="stage-icon">🔍</span>
+                <span class="stage-name">Searching arXiv papers</span>
+                <span class="stage-status-text">Pending</span>
+              </li>
+              <li id="stage-downloading" class="progress-stage-item pending">
+                <span class="stage-icon">📥</span>
+                <span class="stage-name">Downloading PDFs</span>
+                <span class="stage-status-text">Pending</span>
+              </li>
+              <li id="stage-chunking" class="progress-stage-item pending">
+                <span class="stage-icon">✂️</span>
+                <span class="stage-name">Extracting &amp; Chunking text</span>
+                <span class="stage-status-text">Pending</span>
+              </li>
+              <li id="stage-embedding" class="progress-stage-item pending">
+                <span class="stage-icon">🧠</span>
+                <span class="stage-name">Creating vector index</span>
+                <span class="stage-status-text">Pending</span>
+              </li>
+            </ul>
+
+            <!-- Terminal Console Logs -->
+            <div class="console-wrapper">
+              <div class="console-header">
+                <span class="console-dot red"></span>
+                <span class="console-dot yellow"></span>
+                <span class="console-dot green"></span>
+                <span class="console-title">Execution Logs</span>
+              </div>
+              <div id="console-log" class="console-log">
+                <div class="log-entry"><span class="log-time">--:--:--</span> <span class="log-text">Console initialized.</span></div>
+              </div>
+            </div>
+          </div>
           <p id="topic-help" class="topic-help">
             The system will search arXiv, download related PDFs, build a FAISS index, then enable chat for this topic.
           </p>
@@ -46,7 +92,7 @@
           </article>
         </div>
 
-        <form id="chat-form" class="composer">
+        <form id="chat-form" class="composer is-hidden">
           <textarea
             id="question"
             name="question"
@@ -64,6 +110,6 @@
         </form>
       </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=1.2"></script>
   </body>
 </html>

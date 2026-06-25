@@ -259,3 +259,268 @@ button:disabled {
     justify-content: space-between;
   }
 }
+
+/* --- Progress Bar & Stages Checklist --- */
+.progress-container {
+  margin-top: 16px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.progress-stage-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.progress-percentage {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent) 0%, #3a98b9 100%);
+  border-radius: 4px;
+  transition: width 0.4s cubic-bezier(0.1, 0.8, 0.25, 1);
+  box-shadow: 0 0 10px rgba(23, 107, 135, 0.35);
+}
+
+.progress-message {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 18px;
+  font-style: italic;
+  min-height: 20px;
+}
+
+.progress-stages-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.progress-stage-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.015);
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.3s ease;
+}
+
+.progress-stage-item.pending {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.progress-stage-item.active {
+  border-color: var(--accent);
+  background: rgba(23, 107, 135, 0.04);
+  color: var(--accent-dark);
+  font-weight: 600;
+  animation: pulse-active-stage 2.5s infinite ease-in-out;
+}
+
+.progress-stage-item.completed {
+  color: #1b5e20;
+  background: rgba(46, 125, 50, 0.04);
+  border-color: rgba(46, 125, 50, 0.1);
+}
+
+.stage-icon {
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.stage-name {
+  flex-grow: 1;
+}
+
+.stage-status-text {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  min-width: 60px;
+  text-align: center;
+}
+
+.pending .stage-status-text {
+  background: #f1f3f5;
+  color: #6c757d;
+}
+
+.active .stage-status-text {
+  background: rgba(23, 107, 135, 0.12);
+  color: var(--accent);
+}
+
+.completed .stage-status-text {
+  background: rgba(46, 125, 50, 0.12);
+  color: #2e7d32;
+}
+
+@keyframes pulse-active-stage {
+  0% {
+    box-shadow: 0 0 0 0 rgba(23, 107, 135, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(23, 107, 135, 0.12);
+    background: rgba(23, 107, 135, 0.06);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(23, 107, 135, 0.08);
+  }
+}
+
+/* --- Terminal Console log --- */
+.console-wrapper {
+  margin-top: 20px;
+  background: #121212;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.console-header {
+  background: #1a1a1a;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.console-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.console-dot.red { background: #ff5f56; }
+.console-dot.yellow { background: #ffbd2e; }
+.console-dot.green { background: #27c93f; }
+
+.console-title {
+  color: #888;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-left: 6px;
+}
+
+.console-log {
+  padding: 12px 16px;
+  height: 150px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  background: #0f0f0f;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.log-entry {
+  color: #a9b7c6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-time {
+  color: #555;
+  margin-right: 8px;
+}
+
+.log-text {
+  color: #39ff14; /* Monospaced Neon Green Terminal Text */
+}
+
+/* --- Chat Assistant Loading Dots --- */
+.loading-indicator .bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--assistant);
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.loading-dots {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.loading-dots span {
+  animation: blink-loading 1.4s infinite both;
+  font-weight: 700;
+  display: inline-block;
+  font-size: 15px;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink-loading {
+  0% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+}
+
+

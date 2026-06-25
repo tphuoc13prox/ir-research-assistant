@@ -59,10 +59,15 @@ def session_status() -> dict[str, object]:
     }
 
 
-@router.post("/session/start", response_model=TopicResponse)
-def start_session(request: TopicRequest) -> TopicResponse:
+@router.get("/session/progress")
+def session_progress() -> dict[str, object]:
+    return session_manager.get_status()
+
+
+@router.post("/session/start")
+def start_session(request: TopicRequest) -> dict[str, str]:
     try:
-        session = session_manager.start(
+        session_manager.start_background(
             request.topic,
             max_papers=request.max_papers,
         )
@@ -71,13 +76,10 @@ def start_session(request: TopicRequest) -> TopicResponse:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not prepare topic: {exc}") from exc
 
-    return TopicResponse(
-        topic=session.topic,
-        papers_found=len(session.papers),
-        pdfs_downloaded=len(session.pdf_paths),
-        chunks_indexed=session.chunks_count,
-        session_dir=str(session.session_dir),
-    )
+    return {
+        "status": "started",
+        "topic": request.topic,
+    }
 
 
 @router.post("/chat", response_model=ChatResponse)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
@@ -29,6 +29,7 @@ class ArxivClient:
         start: int = 0,
         sort_by: str = "relevance",
         sort_order: str = "descending",
+        progress_callback: Callable[[str], None] | None = None,
     ) -> list[dict[str, Any]]:
         params = {
             "search_query": query,
@@ -37,10 +38,37 @@ class ArxivClient:
             "sortBy": sort_by,
             "sortOrder": sort_order,
         }
-        with httpx.Client(timeout=self.timeout, headers=self.headers) as client:
-            response = client.get(self.API_URL, params=params)
-            response.raise_for_status()
-        return self._parse_feed(response.text)
+        import time
+        retries = 5
+        delay = 2.0
+        for attempt in range(retries):
+            try:
+                with httpx.Client(timeout=self.timeout, headers=self.headers) as client:
+                    response = client.get(self.API_URL, params=params)
+                    response.raise_for_status()
+                    return self._parse_feed(response.text)
+            except httpx.HTTPError as exc:
+                if attempt == retries - 1:
+                    raise exc
+                
+                # Check for 429 Too Many Requests
+                backoff = delay * (2 ** attempt)
+                err_msg = "Error querying arXiv API"
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+                    retry_after = exc.response.headers.get("Retry-After")
+                    try:
+                        backoff = float(retry_after) if retry_after else 10.0
+                    except ValueError:
+                        backoff = 10.0
+                    err_msg = f"Rate limited by arXiv (429). Retrying in {backoff:.1f}s (attempt {attempt + 1}/{retries})..."
+                else:
+                    err_msg = f"Network issue: {exc}. Retrying in {backoff:.1f}s (attempt {attempt + 1}/{retries})..."
+                
+                if progress_callback:
+                    progress_callback(err_msg)
+                
+                time.sleep(backoff)
+        return []
 
     def search_ir_papers(
         self,
@@ -48,9 +76,10 @@ class ArxivClient:
         max_results: int = 10,
         *,
         category: str = "cs.IR",
+        progress_callback: Callable[[str], None] | None = None,
     ) -> list[Paper]:
         arxiv_query = f"cat:{category} AND all:{query}" if query else f"cat:{category}"
-        return [self._to_paper(item) for item in self.search(arxiv_query, max_results)]
+        return [self._to_paper(item) for item in self.search(arxiv_query, max_results, progress_callback=progress_callback)]
 
     def _parse_feed(self, xml_text: str) -> list[dict[str, Any]]:
         root = ET.fromstring(xml_text)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Callable
 
 from src.domain.chunk import Chunk
 from src.domain.retrieval_result import RetrievalResult
@@ -23,12 +24,27 @@ class IndexManager:
         self.chunks_path = chunks_path
         self.normalize = normalize
 
-    def build(self, chunks: list[Chunk], embedder: Embedder, *, batch_size: int = 32) -> FaissIndex:
+    def build(
+        self,
+        chunks: list[Chunk],
+        embedder: Embedder,
+        *,
+        batch_size: int = 32,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> FaissIndex:
         chunks = [chunk for chunk in chunks if isinstance(chunk.text, str) and chunk.text.strip()]
         texts = [chunk.text for chunk in chunks]
         vectors: list[list[float]] = []
-        for start in range(0, len(texts), batch_size):
-            vectors.extend(embedder.encode(texts[start : start + batch_size]))
+        
+        total_chunks = len(texts)
+        if progress_callback:
+            progress_callback(0, total_chunks)
+            
+        for start in range(0, total_chunks, batch_size):
+            end = min(start + batch_size, total_chunks)
+            vectors.extend(embedder.encode(texts[start : end]))
+            if progress_callback:
+                progress_callback(end, total_chunks)
 
         if len(vectors) != len(chunks):
             raise ValueError(
