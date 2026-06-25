@@ -19,7 +19,7 @@ Project skeleton for an information retrieval research assistant focused on pape
 
 ```bash
 pip install -r requirements.txt
-python scripts/run_server.py
+.\run.bat
 ```
 
 The API exposes a health check at `GET /health`.
