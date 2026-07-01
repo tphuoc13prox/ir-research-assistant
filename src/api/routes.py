@@ -11,6 +11,7 @@ session_manager = RagSessionManager()
 class TopicRequest(BaseModel):
     topic: str = Field(min_length=1)
     max_papers: int = Field(default=100, ge=1, le=150)
+    base_model_name: str | None = Field(default=None)
 
 
 class TopicResponse(BaseModel):
@@ -70,6 +71,7 @@ def start_session(request: TopicRequest) -> dict[str, str]:
         session_manager.start_background(
             request.topic,
             max_papers=request.max_papers,
+            base_model_name=request.base_model_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

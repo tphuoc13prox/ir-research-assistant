@@ -28,6 +28,12 @@
               required
             />
             <div class="topic-row">
+              <label for="base-model">LLM Model</label>
+              <select id="base-model" name="base-model">
+                <option value="Qwen/Qwen2.5-0.5B-Instruct" selected>Qwen 2.5 0.5B (Recommended)</option>
+                <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Higher quality, slower)</option>
+                <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (Standard Chat)</option>
+              </select>
               <label for="max-papers">PDF target</label>
               <input id="max-papers" type="number" min="1" max="150" value="100" />
               <button type="submit">Prepare</button>
@@ -62,6 +68,11 @@
               <li id="stage-embedding" class="progress-stage-item pending">
                 <span class="stage-icon">🧠</span>
                 <span class="stage-name">Creating vector index</span>
+                <span class="stage-status-text">Pending</span>
+              </li>
+              <li id="stage-finetuning" class="progress-stage-item pending">
+                <span class="stage-icon">🤖</span>
+                <span class="stage-name">Fine-tuning local LLM</span>
                 <span class="stage-status-text">Pending</span>
               </li>
             </ul>

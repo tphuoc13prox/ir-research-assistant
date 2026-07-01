@@ -1,6 +1,7 @@
 const topicForm = document.querySelector("#topic-form");
 const topicInput = document.querySelector("#topic");
 const maxPapersInput = document.querySelector("#max-papers");
+const baseModelSelect = document.querySelector("#base-model");
 const topicSetup = document.querySelector("#topic-setup");
 const topicHelp = document.querySelector("#topic-help");
 const form = document.querySelector("#chat-form");
@@ -20,7 +21,8 @@ const stageItems = {
   searching: document.querySelector("#stage-searching"),
   downloading: document.querySelector("#stage-downloading"),
   chunking: document.querySelector("#stage-chunking"),
-  embedding: document.querySelector("#stage-embedding")
+  embedding: document.querySelector("#stage-embedding"),
+  finetuning: document.querySelector("#stage-finetuning")
 };
 
 let progressTimer = null;
@@ -122,7 +124,7 @@ function updateProgressUI(data) {
     progressStageTitle.textContent = "Indexing Chunks...";
     
     const itemPercent = total > 0 ? Math.round((current / total) * 100) : 0;
-    const overallPercent = 75 + Math.round(itemPercent * 0.23);
+    const overallPercent = 75 + Math.round(itemPercent * 0.10);
     
     progressPercentage.textContent = `${overallPercent}%`;
     progressBarFill.style.width = `${overallPercent}%`;
@@ -136,6 +138,26 @@ function updateProgressUI(data) {
 
     stageItems.embedding.className = "progress-stage-item active";
     stageItems.embedding.querySelector(".stage-status-text").textContent = `${current}/${total}`;
+  } else if (stage === "finetuning") {
+    progressStageTitle.textContent = "Fine-tuning LLM...";
+    
+    const itemPercent = total > 0 ? Math.round((current / total) * 100) : 0;
+    const overallPercent = 85 + Math.round(itemPercent * 0.14);
+    
+    progressPercentage.textContent = `${overallPercent}%`;
+    progressBarFill.style.width = `${overallPercent}%`;
+
+    stageItems.searching.className = "progress-stage-item completed";
+    stageItems.searching.querySelector(".stage-status-text").textContent = "Done";
+    stageItems.downloading.className = "progress-stage-item completed";
+    stageItems.downloading.querySelector(".stage-status-text").textContent = "Done";
+    stageItems.chunking.className = "progress-stage-item completed";
+    stageItems.chunking.querySelector(".stage-status-text").textContent = "Done";
+    stageItems.embedding.className = "progress-stage-item completed";
+    stageItems.embedding.querySelector(".stage-status-text").textContent = "Done";
+
+    stageItems.finetuning.className = "progress-stage-item active";
+    stageItems.finetuning.querySelector(".stage-status-text").textContent = `${current}/${total}`;
   }
 }
 
@@ -280,6 +302,7 @@ topicForm.addEventListener("submit", async (event) => {
   startProgressPolling();
 
   try {
+    const baseModelName = baseModelSelect ? baseModelSelect.value : "Qwen/Qwen2.5-0.5B-Instruct";
     const response = await fetch("/session/start", {
       method: "POST",
       headers: {
@@ -288,6 +311,7 @@ topicForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         topic,
         max_papers: maxPapers,
+        base_model_name: baseModelName,
       }),
     });
 

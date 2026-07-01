@@ -14,8 +14,9 @@ from src.crawler.downloader import Downloader
 from src.domain.paper import Paper
 from src.embeddings.embedder import SentenceTransformerEmbedder
 from src.generation.generator import Generator
-from src.generation.llm_client import ExtractiveLLMClient
+from src.generation.llm_client import ExtractiveLLMClient, LocalFinetunedLLMClient
 from src.generation.prompt_builder import PromptBuilder
+from src.generation.finetune import run_finetuning
 from src.indexing.index_manager import IndexManager
 from src.ingestion.pdf_loader import PdfLoader
 from src.ingestion.text_cleaner import TextCleaner
@@ -42,12 +43,14 @@ class RagSessionManager:
         chunk_size: int = 1000,
         batch_size: int = 32,
         download_delay_seconds: float = 3.0,
+        base_model_name: str = "Qwen/Qwen2.5-0.5B-Instruct",
     ) -> None:
         self.base_dir = base_dir
         self.model_name = model_name
         self.chunk_size = chunk_size
         self.batch_size = batch_size
         self.download_delay_seconds = download_delay_seconds
+        self.base_model_name = base_model_name
 
         self.active_session: TopicSession | None = None
         self._embedder: SentenceTransformerEmbedder | None = None
@@ -66,11 +69,14 @@ class RagSessionManager:
     # PUBLIC API
     # ------------------------------------------------------------------
 
-    def start_background(self, topic: str, *, max_papers: int = 100) -> None:
+    def start_background(self, topic: str, *, max_papers: int = 100, base_model_name: str | None = None) -> None:
         """Khởi động pipeline trong background thread, không block request."""
         clean_topic = " ".join(topic.split())
         if not clean_topic:
             raise ValueError("topic must not be empty")
+
+        if base_model_name:
+            self.base_model_name = base_model_name
 
         self.status.update({
             "stage": "started",
@@ -127,6 +133,88 @@ class RagSessionManager:
 
     def _run_session(self, clean_topic: str, max_papers: int) -> None:
         try:
+            session_dir = self.base_dir / self._slugify(clean_topic)
+            papers_dir = session_dir / "papers"
+            index_dir = session_dir / "index"
+            finetuned_model_dir = session_dir / "finetuned_model"
+
+            # Check if cache exists
+            papers_file = session_dir / "papers.jsonl"
+            faiss_index_file = index_dir / "faiss.index"
+            chunks_file = index_dir / "chunks.jsonl"
+            model_adapter_file = finetuned_model_dir / "adapter_config.json"
+
+            if (
+                papers_file.exists()
+                and faiss_index_file.exists()
+                and chunks_file.exists()
+                and model_adapter_file.exists()
+            ):
+                # Load existing session
+                self.status.update({
+                    "stage": "searching",
+                    "message": "Found existing session. Loading papers...",
+                    "current": 1,
+                    "total": 5,
+                })
+                time.sleep(0.3)
+                
+                # Load papers
+                papers = self._load_papers(papers_file)
+                
+                # Load pdf paths
+                pdf_paths = list(papers_dir.glob("*.pdf"))
+
+                self.status.update({
+                    "stage": "embedding",
+                    "message": "Loading FAISS vector index...",
+                    "current": 3,
+                    "total": 5,
+                })
+                time.sleep(0.3)
+                
+                manager = IndexManager(
+                    index_path=faiss_index_file,
+                    ids_path=index_dir / "ids.txt",
+                    chunks_path=chunks_file,
+                )
+                index, stored_chunks = manager.load()
+
+                self.status.update({
+                    "stage": "finetuning",
+                    "message": "Loading fine-tuned local LLM model...",
+                    "current": 4,
+                    "total": 5,
+                })
+                time.sleep(0.3)
+
+                session = TopicSession(
+                    topic=clean_topic,
+                    session_dir=session_dir,
+                    papers=papers,
+                    pdf_paths=pdf_paths,
+                    chunks_count=len(stored_chunks),
+                    retriever=DenseRetriever(
+                        self._get_embedder(),
+                        index,
+                        stored_chunks,
+                    ),
+                    generator=Generator(
+                        LocalFinetunedLLMClient(finetuned_model_dir, self.base_model_name),
+                        PromptBuilder(),
+                    ),
+                )
+
+                self.active_session = session
+
+                self.status.update({
+                    "stage": "ready",
+                    "message": "Ready",
+                    "current": len(stored_chunks),
+                    "total": len(stored_chunks),
+                })
+                return
+
             # Searching
             self.status.update({
                 "stage": "searching",
@@ -134,10 +222,6 @@ class RagSessionManager:
                 "current": 0,
                 "total": max_papers,
             })
-
-            session_dir = self.base_dir / self._slugify(clean_topic)
-            papers_dir = session_dir / "papers"
-            index_dir = session_dir / "index"
 
             session_dir.mkdir(parents=True, exist_ok=True)
             papers_dir.mkdir(parents=True, exist_ok=True)
@@ -216,6 +300,39 @@ class RagSessionManager:
 
             _, stored_chunks = manager.load()
 
+            # Fine-tuning local LLM
+            self.status.update({
+                "stage": "finetuning",
+                "message": "Initializing local LLM fine-tuning...",
+                "current": 0,
+                "total": 10,
+            })
+
+            def on_finetune_progress(msg: str) -> None:
+                current_step = 0
+                if "step " in msg:
+                    try:
+                        step_part = msg.split("step ")[1].split(" ")[0]
+                        current_step = int(step_part.split("/")[0])
+                    except Exception:
+                        pass
+                
+                self.status.update({
+                    "stage": "finetuning",
+                    "message": msg,
+                    "current": current_step,
+                    "total": 10,
+                })
+
+            finetuned_model_dir = session_dir / "finetuned_model"
+            
+            run_finetuning(
+                base_model_name=self.base_model_name,
+                chunks_path=index_dir / "chunks.jsonl",
+                output_dir=finetuned_model_dir,
+                progress_callback=on_finetune_progress,
+            )
+
             session = TopicSession(
                 topic=clean_topic,
                 session_dir=session_dir,
@@ -228,12 +345,14 @@ class RagSessionManager:
                     stored_chunks,
                 ),
                 generator=Generator(
-                    ExtractiveLLMClient(),
+                    LocalFinetunedLLMClient(finetuned_model_dir, self.base_model_name),
                     PromptBuilder(),
                 ),
             )
 
             self.active_session = session
+            # Clear downloaded files list to prevent auto-cleanup of this successful session on shutdown
+            self.downloaded_files.clear()
 
             self.status.update({
                 "stage": "ready",
@@ -336,6 +455,30 @@ class RagSessionManager:
             "\n".join(json.dumps(asdict(paper), ensure_ascii=True) for paper in papers),
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _load_papers(path: Path) -> list[Paper]:
+        papers = []
+        if not path.exists():
+            return papers
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                    papers.append(Paper(
+                        paper_id=data["paper_id"],
+                        title=data["title"],
+                        authors=data["authors"],
+                        abstract=data["abstract"],
+                        source_url=data.get("source_url"),
+                        published_at=data.get("published_at"),
+                        metadata=data.get("metadata", {}),
+                    ))
+                except Exception:
+                    continue
+        return papers
 
     @staticmethod
     def _slugify(value: str) -> str:
