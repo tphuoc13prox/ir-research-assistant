@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+import urllib.request
 
 import uvicorn
 
@@ -17,15 +18,16 @@ def _open_browser(host: str, port: int) -> None:
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
     url = f"http://{browser_host}:{port}"
     
-    # Cho den khi server phan hoi (toi da 10 giay)
+    # Wait for the FastAPI app to be fully responsive
     for _ in range(50):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.2)
-            result = sock.connect_ex((browser_host, port))
-            if result == 0:
-                time.sleep(0.3)
-                webbrowser.open(url)
-                return
+        try:
+            with urllib.request.urlopen(f"{url}/health", timeout=0.5) as resp:
+                if resp.status == 200:
+                    time.sleep(0.5)
+                    webbrowser.open(url)
+                    return
+        except Exception:
+            pass
         time.sleep(0.2)
     
     # Fallback
@@ -60,7 +62,7 @@ def main() -> None:
         host=args.host,
         port=port,
         reload=not args.no_reload,
-        reload_dirs=[str(PROJECT_ROOT)],
+        reload_dirs=[str(PROJECT_ROOT / "src"), str(PROJECT_ROOT / "scripts")],
     )
 
 

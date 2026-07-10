@@ -1,6 +1,5 @@
 const topicForm = document.querySelector("#topic-form");
 const topicInput = document.querySelector("#topic");
-const maxPapersInput = document.querySelector("#max-papers");
 const baseModelSelect = document.querySelector("#base-model");
 const topicSetup = document.querySelector("#topic-setup");
 const topicHelp = document.querySelector("#topic-help");
@@ -10,13 +9,15 @@ const topKInput = document.querySelector("#top-k");
 const messages = document.querySelector("#messages");
 const statusLabel = document.querySelector("#status");
 
+const workspace = document.querySelector("#workspace");
+const papersSidebar = document.querySelector("#papers-sidebar");
+const papersList = document.querySelector("#papers-list");
+
 const progressContainer = document.querySelector("#progress-container");
 const progressBarFill = document.querySelector("#progress-bar-fill");
 const progressStageTitle = document.querySelector("#progress-stage-title");
 const progressPercentage = document.querySelector("#progress-percentage");
 const progressMessage = document.querySelector("#progress-message");
-const consoleLog = document.querySelector("#console-log");
-
 const stageItems = {
   searching: document.querySelector("#stage-searching"),
   downloading: document.querySelector("#stage-downloading"),
@@ -31,13 +32,7 @@ let lastLogMessage = "";
 function addConsoleLog(message) {
   if (!message || message === lastLogMessage) return;
   lastLogMessage = message;
-
-  const time = new Date().toLocaleTimeString();
-  const entry = document.createElement("div");
-  entry.className = "log-entry";
-  entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-text">${escapeHtml(message)}</span>`;
-  consoleLog.appendChild(entry);
-  consoleLog.scrollTop = consoleLog.scrollHeight;
+  console.log(`[PIPELINE] ${message}`);
 }
 
 async function refreshProgress() {
@@ -67,7 +62,17 @@ function updateProgressUI(data) {
   const total = data.total || 0;
 
   progressMessage.textContent = message;
-  statusLabel.textContent = message;
+  
+  // Set simple status in the header
+  let statusText = "Ready";
+  if (stage === "searching") statusText = "Searching...";
+  else if (stage === "downloading") statusText = "Downloading...";
+  else if (stage === "chunking") statusText = "Chunking...";
+  else if (stage === "embedding") statusText = "Indexing...";
+  else if (stage === "finetuning") statusText = "Fine-tuning...";
+  else if (stage === "error") statusText = "Error";
+  else if (stage !== "idle" && stage !== "ready") statusText = "Preparing...";
+  statusLabel.textContent = statusText;
 
   if (message) {
     addConsoleLog(message);
@@ -184,12 +189,15 @@ async function finishProgress(topic) {
     setTimeout(() => {
       topicSetup.classList.add("is-hidden");
       form.classList.remove("is-hidden");
+      messages.classList.remove("is-hidden");
       messages.innerHTML = "";
 
       addMessage(
         "assistant",
         `Ready for "${payload.topic}". Indexed ${payload.chunks_indexed} chunks from ${payload.pdfs_downloaded} downloaded PDFs.`
       );
+
+      renderPapersSidebar(payload.papers);
 
       statusLabel.textContent = "Ready";
       questionInput.focus();
@@ -201,6 +209,7 @@ async function finishProgress(topic) {
 }
 
 function handleProgressError(errorMessage) {
+  messages.classList.remove("is-hidden");
   addMessage("assistant", `Error preparing topic: ${errorMessage}`);
   addConsoleLog(`[ERROR] ${errorMessage}`);
   statusLabel.textContent = "Needs attention";
@@ -226,13 +235,91 @@ function stopProgressPolling() {
 
 form.classList.add("is-hidden");
 
+function formatMarkdown(text) {
+  return escapeHtml(text)
+    .replaceAll(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replaceAll(/^### (.*?)$/gm, "<h3>$1</h3>")
+    .replaceAll("\n", "<br>");
+}
+
+function renderPapersSidebar(papers) {
+  if (papers && papers.length > 0) {
+    workspace.classList.add("has-sidebar");
+    papersSidebar.classList.remove("is-hidden");
+    papersList.innerHTML = "";
+    papers.forEach(paper => {
+      const authorsText = Array.isArray(paper.authors) ? paper.authors.join(", ") : paper.authors;
+      const item = document.createElement("div");
+      item.className = "paper-item";
+      item.dataset.paperId = paper.paper_id;
+      item.dataset.paperTitle = paper.title;
+      item.innerHTML = `
+        <h3 class="paper-title">${escapeHtml(paper.title)}</h3>
+        <p class="paper-authors">${escapeHtml(authorsText)}</p>
+      `;
+      item.addEventListener("click", () => handlePaperClick(item, paper.paper_id, paper.title));
+      papersList.appendChild(item);
+    });
+  } else {
+    workspace.classList.remove("has-sidebar");
+    papersSidebar.classList.add("is-hidden");
+  }
+}
+
+async function handlePaperClick(item, paperId, paperTitle) {
+  // Highlight active
+  document.querySelectorAll(".paper-item").forEach(el => el.classList.remove("active"));
+  item.classList.add("active");
+
+  const tempId = "temp-msg-" + Date.now();
+  const article = document.createElement("article");
+  article.className = "message assistant";
+  article.id = tempId;
+  
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.innerHTML = `Summarizing paper: <em>"${escapeHtml(paperTitle)}"</em>...<br><span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>`;
+  
+  article.appendChild(bubble);
+  messages.appendChild(article);
+  messages.scrollTop = messages.scrollHeight;
+
+  try {
+    const response = await fetch("/paper/summarize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ paper_id: paperId }),
+    });
+
+    const tempElement = document.getElementById(tempId);
+    if (tempElement) {
+      tempElement.remove();
+    }
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "Failed to generate summary");
+    }
+
+    addMessage("assistant", `### Summary of "${payload.title}"\n\n${payload.summary}`);
+  } catch (error) {
+    const tempElement = document.getElementById(tempId);
+    if (tempElement) {
+      tempElement.remove();
+    }
+    addMessage("assistant", `Failed to summarize: ${error.message}`);
+  }
+}
+
 function addMessage(role, text, sources = []) {
   const article = document.createElement("article");
   article.className = `message ${role}`;
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = text;
+  bubble.innerHTML = formatMarkdown(text);
 
   if (sources.length > 0) {
     const sourceList = document.createElement("div");
@@ -277,7 +364,7 @@ topicForm.addEventListener("submit", async (event) => {
   const topic = topicInput.value.trim();
   if (!topic) return;
 
-  const maxPapers = Number(maxPapersInput.value || 100);
+  const maxPapers = 10;
 
   statusLabel.textContent = "Preparing topic...";
   topicForm.querySelector("button").disabled = true;
@@ -285,13 +372,13 @@ topicForm.addEventListener("submit", async (event) => {
   topicForm.classList.add("is-hidden");
   topicHelp.classList.add("is-hidden");
   progressContainer.classList.remove("is-hidden");
+  messages.classList.add("is-hidden");
 
   // Reset the UI progress elements and log console
   progressBarFill.style.width = "0%";
   progressPercentage.textContent = "0%";
   progressStageTitle.textContent = "Initializing...";
   progressMessage.textContent = "Starting request...";
-  consoleLog.innerHTML = `<div class="log-entry"><span class="log-time">--:--:--</span> <span class="log-text">Console initialized. Starting pipeline...</span></div>`;
   lastLogMessage = "";
 
   Object.values(stageItems).forEach(item => {
@@ -409,6 +496,7 @@ async function checkActiveSession() {
         topicForm.classList.add("is-hidden");
         topicHelp.classList.add("is-hidden");
         progressContainer.classList.remove("is-hidden");
+        messages.classList.add("is-hidden");
         startProgressPolling();
         return;
       }
@@ -421,12 +509,15 @@ async function checkActiveSession() {
         // Active session exists and is completed, hide setup and show chat directly
         topicSetup.classList.add("is-hidden");
         form.classList.remove("is-hidden");
+        messages.classList.remove("is-hidden");
         messages.innerHTML = "";
 
         addMessage(
           "assistant",
           `Ready for "${statusData.topic}". Indexed ${statusData.chunks_indexed} chunks from ${statusData.pdfs_downloaded} downloaded PDFs.`
         );
+
+        renderPapersSidebar(statusData.papers);
 
         statusLabel.textContent = "Ready";
         questionInput.focus();

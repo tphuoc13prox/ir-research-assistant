@@ -28,3 +28,12 @@ def test_chat_requires_topic_session() -> None:
 
     assert response.status_code == 409
     assert "choose a research topic" in response.json()["detail"]
+
+
+def test_summarize_requires_topic_session() -> None:
+    client = TestClient(app)
+
+    response = client.post("/paper/summarize", json={"paper_id": "1234.5678"})
+
+    assert response.status_code == 409
+    assert "choose a research topic" in response.json()["detail"]

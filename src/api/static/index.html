@@ -8,7 +8,18 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="chat-panel" aria-label="IR Research Assistant chatbot">
+      <div id="workspace" class="workspace-container">
+        <section id="papers-sidebar" class="papers-sidebar is-hidden" aria-label="ArXiv papers list">
+          <header class="sidebar-header">
+            <h2>ArXiv Papers (10)</h2>
+            <p>Click a paper to read its summary</p>
+          </header>
+          <div id="papers-list" class="papers-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </section>
+
+        <section class="chat-panel" aria-label="IR Research Assistant chatbot">
         <header class="chat-header">
           <div>
             <p class="eyebrow">RAG over IR papers</p>
@@ -34,8 +45,6 @@
                 <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Higher quality, slower)</option>
                 <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (Standard Chat)</option>
               </select>
-              <label for="max-papers">PDF target</label>
-              <input id="max-papers" type="number" min="1" max="150" value="100" />
               <button type="submit">Prepare</button>
             </div>
           </form>
@@ -77,18 +86,7 @@
               </li>
             </ul>
 
-            <!-- Terminal Console Logs -->
-            <div class="console-wrapper">
-              <div class="console-header">
-                <span class="console-dot red"></span>
-                <span class="console-dot yellow"></span>
-                <span class="console-dot green"></span>
-                <span class="console-title">Execution Logs</span>
-              </div>
-              <div id="console-log" class="console-log">
-                <div class="log-entry"><span class="log-time">--:--:--</span> <span class="log-text">Console initialized.</span></div>
-              </div>
-            </div>
+
           </div>
           <p id="topic-help" class="topic-help">
             The system will search arXiv, download related PDFs, build a FAISS index, then enable chat for this topic.
@@ -119,8 +117,9 @@
             <button type="submit">Send</button>
           </div>
         </form>
-      </section>
+        </section>
+      </div>
     </main>
-    <script src="/static/app.js?v=1.2"></script>
+    <script src="/static/app.js"></script>
   </body>
 </html>

@@ -69,7 +69,7 @@ class RagSessionManager:
     # PUBLIC API
     # ------------------------------------------------------------------
 
-    def start_background(self, topic: str, *, max_papers: int = 100, base_model_name: str | None = None) -> None:
+    def start_background(self, topic: str, *, max_papers: int = 10, base_model_name: str | None = None) -> None:
         """Khởi động pipeline trong background thread, không block request."""
         clean_topic = " ".join(topic.split())
         if not clean_topic:
