@@ -6,15 +6,18 @@ This application runs entirely locally, utilizing **PyTorch (CUDA)** to accelera
 
 ---
 
-## 🌟 Key Features
+## 🌟 Two-Stage Research Workflow
 
-*   **Real-Time arXiv Crawling & Extraction**: Searches and crawls academic papers by topic, handles rate limits (`429`) with automatic exponential backoff, and extracts PDFs locally.
-*   **Intelligent Text Chunking & Ingestion**: Cleans extracted PDF text and chunks it using semantic boundaries while preserving paper metadata (title, authors, abstract, URL).
-*   **FAISS Vector Indexing**: Encodes chunks using `SentenceTransformers` and indexes them into a local FAISS database for dense semantic retrieval.
-*   **Local GPU-Accelerated Fine-Tuning**: Trains a local LLM (such as `Qwen2.5-0.5B-Instruct` or `TinyLlama`) on the indexed document chunks using **PEFT / LoRA** adapters.
-*   **Conversational RAG Chatbot**: Features a sleek, modern dark-themed web dashboard with live scrolling logs, interactive progress bars, and a question-answering chat interface.
-*   **Session Caching & Reusability**: Bypasses indexing and training stages to instantly load completed sessions in under a second on subsequent starts.
-*   **Selective Resource Cleanup**: Automatically removes partial download artifacts if aborted (e.g., via `Ctrl+C` mid-run), while retaining successful sessions permanently on disk.
+The project is structured into two distinct operational stages:
+
+### 1. Stage 1: Automated 10-Paper Search & Indexing
+- **Fixed Ingestion Target**: The user inputs a research topic. The system automatically queries the arXiv API for **exactly 10 most relevant papers** (crawling limit is locked for stability).
+- **Processing pipeline**: It downloads the PDFs, chunks the extracted text, builds a local FAISS dense vector index, and automatically fine-tunes a local LLM (such as `Qwen 2.5 0.5B`) using LoRA adapters on the indexed chunks.
+
+### 2. Stage 2: Interactive Sidebar & Click-to-Summarize Chatbot
+- **Slide-in Workspace**: Once the index and SFT tuning are completed, a responsive side-by-side dashboard reveals a sidebar showing the 10 downloaded paper titles and authors on the left, and the chatbot interface on the right.
+- **Instant Summaries**: Clicking any paper card triggers the chatbot to immediately generate and print a structured summary of that paper (covering **Core Objective**, **Methodology**, and **Results**) using the fine-tuned local LLM.
+- **RAG QA Chat**: You can still converse with the assistant about the entire collection of papers using the text box at the bottom.
 
 ---
 
@@ -22,14 +25,14 @@ This application runs entirely locally, utilizing **PyTorch (CUDA)** to accelera
 
 *   `src/domain`: Core data structures (e.g., `Paper`, `Chunk`).
 *   `src/crawler`: Discovering and downloading papers using the arXiv API.
-*   `src/ingestion`: PDF parsing, text normalization, and cleaner pipelines.
+*   `src/ingestion`: PDF parsing, text normalization, and cleaning.
 *   `src/chunking`: Text splitters and section partitioners.
 *   `src/embeddings`: Sentence transformer wrapper models.
 *   `src/indexing`: Vector database and ID index management (FAISS).
 *   `src/retrieval`: Dense semantic search and retrieval models.
 *   `src/generation`: Custom local LLM prompt builders and ChatML inference clients.
-*   `src/generation/finetune.py`: LoRA adapters SFT training loop.
-*   `src/api`: FastAPI endpoints and static web UI client dashboard.
+*   `src/generation/finetune.py`: SFT training loop via PEFT/LoRA.
+*   `src/api`: FastAPI endpoints, no-cache resource middleware, and web client.
 *   `tests`: Unit tests for retrieval, chunking, crawling, and API controllers.
 
 ---
@@ -68,15 +71,14 @@ To spin up the FastAPI application and local static client, run the batch script
 .\run.bat
 ```
 
-The application will be running locally at [http://127.0.0.1:8000](http://127.0.0.1:8000).
+The application will launch and be available locally at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 ### 2. Prepare a Topic
 1.  Open the web dashboard in your browser.
 2.  Input a research topic (e.g., `dense retrieval` or `neural reranking`).
-3.  Choose the base LLM model (e.g., **Qwen 2.5 0.5B**).
-4.  Set your paper target and click **Prepare**.
-5.  Watch the console logs and progress indicators update in real-time as the RAG index builds and the model is fine-tuned.
-6.  Once training hits `100%`, query the chatbot directly in the text input box!
+3.  Choose the base LLM model (e.g., **Qwen 2.5 0.5B**) and click **Prepare**.
+4.  Watch the progress indicators update in real-time as the RAG index builds and the model is fine-tuned.
+5.  Once training hits `100%`, click on any paper card in the left sidebar to generate a structured summary, or ask questions in the text input box!
 
 ---
 
