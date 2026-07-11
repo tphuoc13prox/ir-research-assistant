@@ -63,14 +63,29 @@ class LocalFinetunedLLMClient(LLMClient):
         
         inputs = self.tokenizer(formatted_prompt, return_tensors="pt").to(self.device)
         
+        # Stop on both ChatML token and model standard EOS token
+        stop_tokens = [self.tokenizer.eos_token_id]
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if isinstance(im_end_id, int):
+            stop_tokens.append(im_end_id)
+        try:
+            im_end_encoded = self.tokenizer.encode("<|im_end|>", add_special_tokens=False)
+            if im_end_encoded:
+                stop_tokens.extend(im_end_encoded)
+        except Exception:
+            pass
+        stop_tokens = list(set([int(tid) for tid in stop_tokens if tid is not None]))
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=1024,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
-                eos_token_id=self.tokenizer.encode("<|im_end|>") or self.tokenizer.eos_token_id,
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=3,
+                eos_token_id=stop_tokens,
             )
             
         # Decode only the generated tokens (exclude input prompt)

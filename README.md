@@ -17,7 +17,7 @@ The project is structured into two distinct operational stages:
 ### 2. Stage 2: Interactive Sidebar & Click-to-Summarize Chatbot
 - **Slide-in Workspace**: Once the index and SFT tuning are completed, a responsive side-by-side dashboard reveals a sidebar showing the 10 downloaded paper titles and authors on the left, and the chatbot interface on the right.
 - **Instant Summaries**: Clicking any paper card triggers the chatbot to immediately generate and print a structured summary of that paper (covering **Core Objective**, **Methodology**, and **Results**) using the fine-tuned local LLM.
-- **RAG QA Chat**: You can still converse with the assistant about the entire collection of papers using the text box at the bottom.
+- **Paper-Scoped Chat**: Once you select a paper from the sidebar, the composer input field is unlocked. Any subsequent questions asked in the chatbot are scoped exclusively to the text of that specific paper. Technical source reference lists (scores, IDs, chunk previews) are hidden from the conversation interface for a cleaner reading experience.
 
 ---
 

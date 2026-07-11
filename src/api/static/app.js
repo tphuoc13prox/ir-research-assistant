@@ -28,6 +28,7 @@ const stageItems = {
 
 let progressTimer = null;
 let lastLogMessage = "";
+let activePaperId = null;
 
 function addConsoleLog(message) {
   if (!message || message === lastLogMessage) return;
@@ -200,7 +201,8 @@ async function finishProgress(topic) {
       renderPapersSidebar(payload.papers);
 
       statusLabel.textContent = "Ready";
-      questionInput.focus();
+      questionInput.disabled = true;
+      questionInput.placeholder = "Select a paper from the sidebar to start chatting...";
     }, 1200);
 
   } catch (error) {
@@ -270,6 +272,11 @@ async function handlePaperClick(item, paperId, paperTitle) {
   // Highlight active
   document.querySelectorAll(".paper-item").forEach(el => el.classList.remove("active"));
   item.classList.add("active");
+
+  activePaperId = paperId;
+  questionInput.disabled = false;
+  questionInput.placeholder = `Ask a question about "${paperTitle}"...`;
+  questionInput.focus();
 
   const tempId = "temp-msg-" + Date.now();
   const article = document.createElement("article");
@@ -373,6 +380,7 @@ topicForm.addEventListener("submit", async (event) => {
   topicHelp.classList.add("is-hidden");
   progressContainer.classList.remove("is-hidden");
   messages.classList.add("is-hidden");
+  activePaperId = null;
 
   // Reset the UI progress elements and log console
   progressBarFill.style.width = "0%";
@@ -447,6 +455,7 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         question,
         top_k: Number(topKInput.value || 5),
+        paper_id: activePaperId,
       }),
     });
 
@@ -464,8 +473,7 @@ form.addEventListener("submit", async (event) => {
 
     addMessage(
       "assistant",
-      payload.answer,
-      payload.sources
+      payload.answer
     );
 
     statusLabel.textContent = "Ready";
@@ -520,7 +528,8 @@ async function checkActiveSession() {
         renderPapersSidebar(statusData.papers);
 
         statusLabel.textContent = "Ready";
-        questionInput.focus();
+        questionInput.disabled = true;
+        questionInput.placeholder = "Select a paper from the sidebar to start chatting...";
       }
     }
   } catch (error) {

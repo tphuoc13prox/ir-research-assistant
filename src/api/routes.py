@@ -25,6 +25,7 @@ class TopicResponse(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)
+    paper_id: str | None = Field(default=None)
 
 
 class SourceResponse(BaseModel):
@@ -104,7 +105,14 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail="Please choose a research topic before chatting.",
         )
 
-    results = session.retriever.retrieve(Query(text=request.question, top_k=request.top_k))
+    if request.paper_id:
+        # Search a larger number of matches to find top_k belonging to the requested paper_id
+        large_top_k = max(250, request.top_k * 5)
+        raw_results = session.retriever.retrieve(Query(text=request.question, top_k=large_top_k))
+        results = [r for r in raw_results if r.paper_id == request.paper_id][:request.top_k]
+    else:
+        results = session.retriever.retrieve(Query(text=request.question, top_k=request.top_k))
+
     answer = session.generator.generate(request.question, results)
     return ChatResponse(
         answer=answer,
