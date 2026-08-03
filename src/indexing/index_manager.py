@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 from typing import Callable
 
 from src.domain.chunk import Chunk
 from src.domain.retrieval_result import RetrievalResult
-from src.embeddings.embedder import Embedder
+from src.embeddings.interfaces.embedding_service import EmbeddingService
 from src.indexing.faiss_index import FaissIndex
+from src.indexing.dense_builder import DenseIndexBuilder
+from src.indexing.sparse_builder import SparseIndexBuilder
 
 
 class IndexManager:
@@ -15,11 +18,13 @@ class IndexManager:
         self,
         *,
         index_path: Path = Path("data/index/faiss.index"),
+        sparse_index_path: Path = Path("data/index/bm25.pkl"),
         ids_path: Path = Path("data/index/ids.txt"),
         chunks_path: Path = Path("data/index/chunks.jsonl"),
         normalize: bool = True,
     ) -> None:
         self.index_path = index_path
+        self.sparse_index_path = sparse_index_path
         self.ids_path = ids_path
         self.chunks_path = chunks_path
         self.normalize = normalize
@@ -27,33 +32,27 @@ class IndexManager:
     def build(
         self,
         chunks: list[Chunk],
-        embedder: Embedder,
+        embedder: EmbeddingService,
         *,
         batch_size: int = 32,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> FaissIndex:
-        chunks = [chunk for chunk in chunks if isinstance(chunk.text, str) and chunk.text.strip()]
-        texts = [chunk.text for chunk in chunks]
-        vectors: list[list[float]] = []
-        
-        total_chunks = len(texts)
-        if progress_callback:
-            progress_callback(0, total_chunks)
-            
-        for start in range(0, total_chunks, batch_size):
-            end = min(start + batch_size, total_chunks)
-            vectors.extend(embedder.encode(texts[start : end]))
-            if progress_callback:
-                progress_callback(end, total_chunks)
+        # Build dense index
+        dense_builder = DenseIndexBuilder(normalize=self.normalize)
+        index = dense_builder.build(
+            chunks,
+            embedder,
+            self.index_path,
+            self.ids_path,
+            batch_size=batch_size,
+            progress_callback=progress_callback,
+        )
 
-        if len(vectors) != len(chunks):
-            raise ValueError(
-                f"Embedding count mismatch: encoded {len(vectors)} vectors for {len(chunks)} chunks"
-            )
+        # Build sparse index
+        sparse_builder = SparseIndexBuilder()
+        sparse_builder.build(chunks, self.sparse_index_path)
 
-        index = FaissIndex(normalize=self.normalize)
-        index.add(vectors, [chunk.chunk_id for chunk in chunks])
-        index.save(self.index_path, self.ids_path)
+        # Save chunks metadata
         self._save_chunks(chunks)
         return index
 
@@ -64,6 +63,35 @@ class IndexManager:
             normalize=self.normalize,
         )
         return index, self.load_chunks()
+
+    def load_hybrid(self) -> tuple[FaissIndex, dict[str, RetrievalResult], any]:
+        index, stored_chunks = self.load()
+        
+        # Lazy loading or fallback build of BM25 sparse index
+        if self.sparse_index_path.exists():
+            try:
+                with open(self.sparse_index_path, "rb") as f:
+                    bm25_instance = pickle.load(f)
+            except Exception:
+                bm25_instance = self._rebuild_sparse_index(stored_chunks)
+        else:
+            bm25_instance = self._rebuild_sparse_index(stored_chunks)
+            
+        return index, stored_chunks, bm25_instance
+
+    def _rebuild_sparse_index(self, stored_chunks: dict[str, RetrievalResult]) -> any:
+        # Backward compatibility fallback
+        chunks_list = [
+            Chunk(
+                chunk_id=c.chunk_id,
+                paper_id=c.paper_id,
+                text=c.text,
+                metadata=c.metadata,
+            )
+            for c in stored_chunks.values()
+        ]
+        sparse_builder = SparseIndexBuilder()
+        return sparse_builder.build(chunks_list, self.sparse_index_path)
 
     def load_chunks(self) -> dict[str, RetrievalResult]:
         chunks: dict[str, RetrievalResult] = {}
@@ -79,6 +107,8 @@ class IndexManager:
                 paper_id=item["paper_id"],
                 score=0.0,
                 text=item["text"],
+                page=item.get("page") or item.get("metadata", {}).get("page"),
+                section=item.get("section") or item.get("metadata", {}).get("section"),
                 metadata=item.get("metadata", {}),
             )
         return chunks
@@ -95,6 +125,7 @@ class IndexManager:
                     "start_char": chunk.start_char,
                     "end_char": chunk.end_char,
                     "metadata": chunk.metadata,
+                    "page": chunk.metadata.get("page"),
                 },
                 ensure_ascii=True,
             )

@@ -31,6 +31,10 @@ class ArxivClient:
         sort_order: str = "descending",
         progress_callback: Callable[[str], None] | None = None,
     ) -> list[dict[str, Any]]:
+        import time
+        # Pre-emptively sleep 3.0 seconds to prevent arXiv rate-limiting
+        time.sleep(3.0)
+
         params = {
             "search_query": query,
             "start": start,
@@ -38,8 +42,7 @@ class ArxivClient:
             "sortBy": sort_by,
             "sortOrder": sort_order,
         }
-        import time
-        retries = 5
+        retries = 2
         delay = 2.0
         for attempt in range(retries):
             try:

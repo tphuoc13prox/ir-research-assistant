@@ -3,123 +3,381 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>IR Research Assistant</title>
+    <title>IR Research Assistant v2</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <main class="app-shell">
-      <div id="workspace" class="workspace-container">
-        <section id="papers-sidebar" class="papers-sidebar is-hidden" aria-label="ArXiv papers list">
-          <header class="sidebar-header">
-            <h2>ArXiv Papers (10)</h2>
-            <p>Click a paper to read its summary</p>
-          </header>
-          <div id="papers-list" class="papers-list">
-            <!-- Rendered dynamically -->
+      <header class="app-header">
+        <div class="header-logo">
+          <span class="logo-icon">⚡</span>
+          <div class="logo-text">
+            <span class="logo-title">IR Research Assistant</span>
+            <span class="logo-version">v2.0 Production Engine</span>
           </div>
-        </section>
+        </div>
+        <div class="header-status-badge">
+          <span id="status-dot" class="status-dot idle"></span>
+          <span id="status" class="status">Idle</span>
+        </div>
+      </header>
 
-        <section class="chat-panel" aria-label="IR Research Assistant chatbot">
-        <header class="chat-header">
-          <div>
-            <p class="eyebrow">RAG over IR papers</p>
-            <h1>IR Research Assistant</h1>
+      <div class="main-container">
+        <!-- SCREEN 1: TOPIC SEARCH & DISCOVERY -->
+        <section id="topic-setup-screen" class="workspace-screen card animate-fade-in">
+          <div class="screen-intro">
+            <h2>Start a Research Session</h2>
+            <p>Search academic repositories to discover papers, curate your knowledge base, and explore concepts with semantic reasoning.</p>
           </div>
-          <span id="status" class="status">Ready</span>
-        </header>
 
-        <section id="topic-setup" class="topic-setup">
-          <form id="topic-form" class="topic-form">
-            <label for="topic">Research topic</label>
-            <input
-              id="topic"
-              name="topic"
-              type="text"
-              placeholder="dense retrieval, neural ranking, query expansion..."
-              required
-            />
-            <div class="topic-row">
-              <label for="base-model">LLM Model</label>
-              <select id="base-model" name="base-model">
-                <option value="Qwen/Qwen2.5-0.5B-Instruct" selected>Qwen 2.5 0.5B (Recommended)</option>
-                <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Higher quality, slower)</option>
-                <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (Standard Chat)</option>
-              </select>
-              <button type="submit">Prepare</button>
+          <form id="topic-form" class="search-form">
+            <div class="search-input-wrapper">
+              <input
+                id="topic"
+                name="topic"
+                type="text"
+                placeholder="Enter search topic (e.g. dense retrieval, neural ranking, query expansion)..."
+                required
+              />
+              <button type="submit" id="search-btn">Discover Papers</button>
+            </div>
+            <div class="model-row">
+              <label for="base-model">
+                <span>Language Model</span>
+                <select id="base-model" name="base-model">
+                  <option value="Qwen/Qwen2.5-0.5B-Instruct" selected>Qwen 2.5 0.5B (Recommended)</option>
+                  <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Higher quality, slower)</option>
+                  <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (Standard Chat)</option>
+                </select>
+              </label>
             </div>
           </form>
-          <div id="progress-container" class="progress-container is-hidden">
-            <div class="progress-header">
-              <span id="progress-stage-title" class="progress-stage-title">Initializing...</span>
-              <span id="progress-percentage" class="progress-percentage">0%</span>
-            </div>
-            <div class="progress-bar-track">
-              <div id="progress-bar-fill" class="progress-bar-fill"></div>
-            </div>
-            <div class="progress-message" id="progress-message">Starting processing...</div>
-            
-            <ul class="progress-stages-list">
-              <li id="stage-searching" class="progress-stage-item pending">
-                <span class="stage-icon">🔍</span>
-                <span class="stage-name">Searching arXiv papers</span>
-                <span class="stage-status-text">Pending</span>
-              </li>
-              <li id="stage-downloading" class="progress-stage-item pending">
-                <span class="stage-icon">📥</span>
-                <span class="stage-name">Downloading PDFs</span>
-                <span class="stage-status-text">Pending</span>
-              </li>
-              <li id="stage-chunking" class="progress-stage-item pending">
-                <span class="stage-icon">✂️</span>
-                <span class="stage-name">Extracting &amp; Chunking text</span>
-                <span class="stage-status-text">Pending</span>
-              </li>
-              <li id="stage-embedding" class="progress-stage-item pending">
-                <span class="stage-icon">🧠</span>
-                <span class="stage-name">Creating vector index</span>
-                <span class="stage-status-text">Pending</span>
-              </li>
-              <li id="stage-finetuning" class="progress-stage-item pending">
-                <span class="stage-icon">🤖</span>
-                <span class="stage-name">Fine-tuning local LLM</span>
-                <span class="stage-status-text">Pending</span>
-              </li>
-            </ul>
 
-
+          <!-- DISCOVERED PAPERS SELECTION TABLE -->
+          <div id="search-results-container" class="search-results-container is-hidden">
+            <div class="results-header">
+              <h3>Discovered Papers (<span id="results-count">0</span>)</h3>
+              <div class="results-actions">
+                <button type="button" class="btn-subtle" id="select-all-btn">Select All</button>
+                <button type="button" class="btn-subtle" id="clear-all-btn">Clear Selection</button>
+                <button type="button" class="btn-primary" id="import-btn" disabled>Import Selected to KB</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="papers-table">
+                <thead>
+                  <tr>
+                    <th class="col-check"></th>
+                    <th class="col-title">Paper Details</th>
+                    <th class="col-year">Year</th>
+                    <th class="col-category">Categories</th>
+                  </tr>
+                </thead>
+                <tbody id="search-results-body">
+                  <!-- Dynamic search rows -->
+                </tbody>
+              </table>
+            </div>
           </div>
-          <p id="topic-help" class="topic-help">
-            The system will search arXiv, download related PDFs, build a FAISS index, then enable chat for this topic.
-          </p>
         </section>
 
-        <div id="messages" class="messages" aria-live="polite">
-          <article class="message assistant">
-            <div class="bubble">
-              Choose a research topic first. After indexing finishes, ask questions about the downloaded papers.
-            </div>
-          </article>
-        </div>
-
-        <form id="chat-form" class="composer is-hidden">
-          <textarea
-            id="question"
-            name="question"
-            rows="2"
-            placeholder="Ask a question about your IR papers..."
-            required
-          ></textarea>
-          <div class="composer-actions">
-            <label>
-              Sources
-              <input id="top-k" type="number" min="1" max="20" value="5" />
-            </label>
-            <button type="submit">Send</button>
+        <!-- SCREEN 2: KNOWLEDGE BASE BUILDER -->
+        <section id="kb-builder-screen" class="workspace-screen card is-hidden animate-fade-in">
+          <div class="screen-intro">
+            <h2>Knowledge Base Builder</h2>
+            <p>Compiling the selected papers into your production hybrid indices. This process downloads, parses, and vectorizes text chunks.</p>
           </div>
-        </form>
+
+          <div class="builder-layout">
+            <div class="builder-status-panel">
+              <div class="progress-info">
+                <span id="progress-stage-title" class="progress-stage-title">Initializing...</span>
+                <span id="progress-percentage" class="progress-percentage">0%</span>
+              </div>
+              <div class="progress-bar-track">
+                <div id="progress-bar-fill" class="progress-bar-fill"></div>
+              </div>
+              <div class="progress-message" id="progress-message">Starting request...</div>
+              
+              <ul class="progress-stages-list">
+                <li id="stage-downloading" class="progress-stage-item pending">
+                  <span class="stage-icon">📥</span>
+                  <span class="stage-name">Downloading PDF Papers</span>
+                  <span class="stage-status-text">Pending</span>
+                </li>
+                <li id="stage-parsing" class="progress-stage-item pending">
+                  <span class="stage-icon">📄</span>
+                  <span class="stage-name">Parsing &amp; Extracting Text</span>
+                  <span class="stage-status-text">Pending</span>
+                </li>
+                <li id="stage-chunking" class="progress-stage-item pending">
+                  <span class="stage-icon">✂️</span>
+                  <span class="stage-name">Text Chunking &amp; Preparation</span>
+                  <span class="stage-status-text">Pending</span>
+                </li>
+                <li id="stage-embedding" class="progress-stage-item pending">
+                  <span class="stage-icon">🧠</span>
+                  <span class="stage-name">Generating Chunks Vector Index</span>
+                  <span class="stage-status-text">Pending</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- BUILD COMPLETED SUMMARY CARD -->
+            <div id="summary-card" class="summary-card is-hidden animate-slide-up">
+              <div class="summary-header">
+                <span class="summary-badge">✓ Build Success</span>
+                <h3>KB Summary Card</h3>
+              </div>
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <span class="summary-label">Papers Ingested</span>
+                  <span class="summary-val" id="sum-papers">0</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Generated Chunks</span>
+                  <span class="summary-val" id="sum-chunks">0</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Vectorization Time</span>
+                  <span class="summary-val" id="sum-emb-time">0s</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Indices Space Used</span>
+                  <span class="summary-val" id="sum-index-size">0 KB</span>
+                </div>
+              </div>
+              <button class="btn-primary btn-block" id="start-chat-btn">Launch Workspace Chat</button>
+            </div>
+          </div>
+
+          <!-- Terminal logs -->
+          <div class="console-wrapper">
+            <div class="console-header">
+              <span class="console-dot red"></span>
+              <span class="console-dot yellow"></span>
+              <span class="console-dot green"></span>
+              <span class="console-title">Ingestion Console Pipeline Logs</span>
+            </div>
+            <div class="console-log" id="console-log">
+              <!-- Logs stream -->
+            </div>
+          </div>
+        </section>
+
+        <!-- SCREEN 3: WORKSPACE DASHBOARD -->
+        <section id="chat-workspace-screen" class="workspace-screen workspace-layout is-hidden animate-fade-in">
+          <!-- LEFT SIDEBAR: ACTIVE PAPERS LIST -->
+          <aside class="papers-sidebar" aria-label="Ingested papers list">
+            <div class="sidebar-header">
+              <h2>Ingested Papers (<span id="papers-count-badge">0</span>)</h2>
+              <p>Click a paper to read its summary and restrict scope</p>
+            </div>
+            <div id="papers-list" class="papers-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </aside>
+
+          <!-- CENTER PANEL: CHAT WINDOW -->
+          <section class="chat-panel" aria-label="IR Research Assistant chatbot">
+            <div id="messages" class="messages" aria-live="polite">
+              <article class="message assistant">
+                <div class="bubble">
+                  Welcome to your Research Workspace. Select a paper from the sidebar to restrict scope and generate a summary, or ask a question over the entire ingested knowledge base.
+                </div>
+              </article>
+            </div>
+
+            <form id="chat-form" class="composer">
+              <div class="composer-row">
+                <textarea
+                  id="question"
+                  name="question"
+                  rows="2"
+                  placeholder="Ask a question about your papers..."
+                  required
+                ></textarea>
+                <button type="submit" id="send-chat-btn">Send</button>
+              </div>
+              <div class="composer-actions">
+                <div class="composer-left">
+                  <span id="active-scope-badge" class="scope-badge global">Global Scope</span>
+                </div>
+                <div class="composer-right">
+                  <label class="compact-label">
+                    <span>Top Chunks (K)</span>
+                    <input id="top-k" type="number" min="1" max="20" value="5" />
+                  </label>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <!-- RIGHT SIDEBAR: STATS, SETTINGS & DEVELOPER DEBUG -->
+          <aside class="workspace-info-sidebar">
+            <div class="sidebar-tabs">
+              <button class="tab-btn active" data-tab="tab-stats">📊 Stats</button>
+              <button class="tab-btn" data-tab="tab-settings">⚙️ Settings</button>
+              <button class="tab-btn" data-tab="tab-debug">🛠️ Debug</button>
+            </div>
+
+            <div class="tab-content">
+              <!-- Tab 1: KB Stats -->
+              <div id="tab-stats" class="tab-panel active">
+                <h3>Knowledge Base Statistics</h3>
+                <div class="stats-table">
+                  <div class="stats-row">
+                    <span class="stats-label">Total Papers Ingested</span>
+                    <span class="stats-value" id="stats-papers">0</span>
+                  </div>
+                  <div class="stats-row">
+                    <span class="stats-label">Total Text Chunks</span>
+                    <span class="stats-value" id="stats-chunks">0</span>
+                  </div>
+                  <div class="stats-row">
+                    <span class="stats-label">Embedding Model</span>
+                    <span class="stats-value" id="stats-model">-</span>
+                  </div>
+                  <div class="stats-row">
+                    <span class="stats-label">Hybrid Mode</span>
+                    <span class="stats-value" id="stats-hybrid">Enabled</span>
+                  </div>
+                  <div class="stats-row">
+                    <span class="stats-label">FAISS Dense Index</span>
+                    <span class="stats-value status-indicator built" id="stats-dense">Built</span>
+                  </div>
+                  <div class="stats-row">
+                    <span class="stats-label">BM25 Sparse Index</span>
+                    <span class="stats-value status-indicator built" id="stats-sparse">Built</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab 2: Retrieval Settings -->
+              <div id="tab-settings" class="tab-panel">
+                <h3>Retrieval System Parameters</h3>
+                <form id="settings-form" class="settings-form">
+                  <label class="settings-checkbox">
+                    <input type="checkbox" id="setting-hybrid-enabled" checked />
+                    <span>Enable Hybrid Retrieval (Dense + Sparse)</span>
+                  </label>
+                  
+                  <div class="settings-grid">
+                    <div class="settings-field">
+                      <label for="setting-dense-k">Dense Top K Candidates</label>
+                      <input type="number" id="setting-dense-k" min="1" max="100" value="5" />
+                    </div>
+                    <div class="settings-field">
+                      <label for="setting-sparse-k">Sparse Top K Candidates</label>
+                      <input type="number" id="setting-sparse-k" min="1" max="100" value="5" />
+                    </div>
+                    <div class="settings-field">
+                      <label for="setting-fusion-k">RRF Fusion Output K</label>
+                      <input type="number" id="setting-fusion-k" min="1" max="50" value="5" />
+                    </div>
+                    <div class="settings-field">
+                      <label for="setting-rrf-k">RRF Penalty Param (K)</label>
+                      <input type="number" id="setting-rrf-k" min="1" max="200" value="60" />
+                    </div>
+                  </div>
+                  <button type="submit" class="btn-primary btn-block">Save Configuration</button>
+                </form>
+              </div>
+
+              <!-- Tab 3: Developer Debug Panel -->
+              <div id="tab-debug" class="tab-panel">
+                <h3>Query Execution Metrics</h3>
+                
+                <div class="debug-metric-group">
+                  <h4>Latency Breakdown</h4>
+                  <div class="latency-grid">
+                    <div class="latency-box">
+                      <span class="latency-lbl">Dense</span>
+                      <span class="latency-val" id="dbg-dense-time">0 ms</span>
+                    </div>
+                    <div class="latency-box">
+                      <span class="latency-lbl">Sparse</span>
+                      <span class="latency-val" id="dbg-sparse-time">0 ms</span>
+                    </div>
+                    <div class="latency-box">
+                      <span class="latency-lbl">Fusion</span>
+                      <span class="latency-val" id="dbg-fusion-time">0 ms</span>
+                    </div>
+                    <div class="latency-box highlight">
+                      <span class="latency-lbl">Total</span>
+                      <span class="latency-val" id="dbg-total-time">0 ms</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="debug-metric-group">
+                  <h4>Intermediate Retrievals &amp; Rankings</h4>
+                  <div class="ranks-container">
+                    <div class="ranks-toggle">
+                      <button class="rank-toggle-btn active" data-rank-view="rank-fused">Fusion Ranks</button>
+                      <button class="rank-toggle-btn" data-rank-view="rank-dense">Dense</button>
+                      <button class="rank-toggle-btn" data-rank-view="rank-sparse">Sparse</button>
+                    </div>
+                    
+                    <div class="ranks-list-wrapper">
+                      <!-- Fused Ranks -->
+                      <div id="rank-fused" class="ranks-list-panel active">
+                        <table class="debug-ranks-table">
+                          <thead>
+                            <tr>
+                              <th>Rank</th>
+                              <th>Chunk ID</th>
+                              <th>RRF Score</th>
+                            </tr>
+                          </thead>
+                          <tbody id="fused-ranks-body">
+                            <tr><td colspan="3" class="empty-row">No query metrics available. Send a message to see ranks.</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- Dense Ranks -->
+                      <div id="rank-dense" class="ranks-list-panel">
+                        <table class="debug-ranks-table">
+                          <thead>
+                            <tr>
+                              <th>Rank</th>
+                              <th>Chunk ID</th>
+                              <th>Cosine Score</th>
+                            </tr>
+                          </thead>
+                          <tbody id="dense-ranks-body">
+                            <tr><td colspan="3" class="empty-row">No query metrics available.</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- Sparse Ranks -->
+                      <div id="rank-sparse" class="ranks-list-panel">
+                        <table class="debug-ranks-table">
+                          <thead>
+                            <tr>
+                              <th>Rank</th>
+                              <th>Chunk ID</th>
+                              <th>BM25 Score</th>
+                            </tr>
+                          </thead>
+                          <tbody id="sparse-ranks-body">
+                            <tr><td colspan="3" class="empty-row">No query metrics available.</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
         </section>
       </div>
     </main>
+
     <script src="/static/app.js"></script>
   </body>
 </html>

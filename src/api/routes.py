@@ -1,8 +1,11 @@
+from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from src.domain.query import Query
-from src.api.rag_session import RagSessionManager
+from src.api.rag_session import RagSessionManager, TopicSession
+from src.paper_discovery.discovery_service import DiscoveryService
+from src.retrieval.hybrid_retriever import HybridRetriever
 
 router = APIRouter()
 session_manager = RagSessionManager()
@@ -10,16 +13,16 @@ session_manager = RagSessionManager()
 
 class TopicRequest(BaseModel):
     topic: str = Field(min_length=1)
-    max_papers: int = Field(default=100, ge=1, le=150)
+    papers: list[dict] = Field(default_factory=list)
     base_model_name: str | None = Field(default=None)
 
 
-class TopicResponse(BaseModel):
-    topic: str
-    papers_found: int
-    pdfs_downloaded: int
-    chunks_indexed: int
-    session_dir: str
+class SettingsRequest(BaseModel):
+    hybrid_enabled: bool
+    dense_top_k: int
+    sparse_top_k: int
+    fusion_top_k: int
+    rrf_k: int
 
 
 class ChatRequest(BaseModel):
@@ -36,9 +39,31 @@ class SourceResponse(BaseModel):
     metadata: dict[str, str]
 
 
+class DebugRankItem(BaseModel):
+    chunk_id: str
+    paper_id: str
+    score: float
+    rank: int | None = None
+
+
+class RetrievalDebugInfo(BaseModel):
+    dense_latency_ms: float
+    sparse_latency_ms: float
+    fusion_latency_ms: float
+    total_latency_ms: float
+    dense_results: list[DebugRankItem]
+    sparse_results: list[DebugRankItem]
+    fused_results: list[DebugRankItem]
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceResponse]
+    debug_info: RetrievalDebugInfo | None = None
+
+
+class SummarizeRequest(BaseModel):
+    paper_id: str
 
 
 @router.get("/health")
@@ -46,11 +71,69 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/session/search")
+def search_papers(query: str, limit: int = 10) -> list[dict]:
+    try:
+        service = DiscoveryService()
+        discovered = service.search_papers(query, limit=limit)
+        return [
+            {
+                "paper_id": p.paper_id,
+                "title": p.title,
+                "authors": p.authors,
+                "abstract": p.abstract,
+                "pdf_url": p.pdf_url,
+                "published_year": p.published_year,
+                "categories": p.categories,
+                "doi": p.doi,
+            }
+            for p in discovered
+        ]
+    except Exception as exc:
+        err_msg = str(exc)
+        if "429" in err_msg or "too many requests" in err_msg.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="arXiv rate-limit block (HTTP 429). Please wait a moment before trying again."
+            )
+        raise HTTPException(status_code=500, detail=err_msg)
+
+
+@router.post("/session/start")
+def start_session(request: TopicRequest) -> dict[str, str]:
+    try:
+        session_manager.start_background(
+            request.topic,
+            request.papers,
+            base_model_name=request.base_model_name,
+        )
+        return {"status": "started"}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not prepare topic: {exc}") from exc
+
+
+@router.get("/session/progress")
+def session_progress() -> dict[str, object]:
+    return session_manager.get_status()
+
+
 @router.get("/session/status")
 def session_status() -> dict[str, object]:
     session = session_manager.get_active()
     if session is None:
         return {"ready": False}
+    
+    stats = {
+        "papers_count": len(session.papers),
+        "chunks_count": session.chunks_count,
+        "embedding_model": session_manager.model_name,
+        "hybrid_enabled": session_manager.settings["hybrid_enabled"],
+        "dense_index_status": "built" if (session.session_dir / "index" / "faiss.index").exists() else "none",
+        "sparse_index_status": "built" if (session.session_dir / "index" / "bm25.pkl").exists() else "none",
+    }
+
     return {
         "ready": True,
         "topic": session.topic,
@@ -65,35 +148,37 @@ def session_status() -> dict[str, object]:
                 "authors": p.authors,
                 "abstract": p.abstract,
                 "source_url": p.source_url or "",
+                "published_at": p.published_at or "",
             }
             for p in session.papers
-        ]
+        ],
+        "stats": stats,
     }
 
 
-@router.get("/session/progress")
-def session_progress() -> dict[str, object]:
-    return session_manager.get_status()
-
-
-@router.post("/session/start")
-def start_session(request: TopicRequest) -> dict[str, str]:
-    try:
-        session_manager.start_background(
-            request.topic,
-            max_papers=10,
-            base_model_name=request.base_model_name,
-        )
-        return {"status": "started"}
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not prepare topic: {exc}") from exc
-
+@router.get("/settings")
+def get_settings() -> dict[str, Any]:
     return {
-        "status": "started",
-        "topic": request.topic,
+        "settings": session_manager.settings,
+        "embedding_model": session_manager.model_name,
+        "base_model_name": session_manager.base_model_name,
     }
+
+
+@router.post("/settings")
+def update_settings(request: SettingsRequest) -> dict[str, str]:
+    session_manager.settings.update({
+        "hybrid_enabled": request.hybrid_enabled,
+        "dense_top_k": request.dense_top_k,
+        "sparse_top_k": request.sparse_top_k,
+        "fusion_top_k": request.fusion_top_k,
+        "rrf_k": request.rrf_k,
+    })
+    session = session_manager.get_active()
+    if session and hasattr(session.retriever, "fusion_strategy"):
+        from src.retrieval.fusion.rrf import ReciprocalRankFusion
+        session.retriever.fusion_strategy = ReciprocalRankFusion(k=request.rrf_k)
+    return {"status": "updated"}
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -105,15 +190,76 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail="Please choose a research topic before chatting.",
         )
 
-    if request.paper_id:
-        # Search a larger number of matches to find top_k belonging to the requested paper_id
-        large_top_k = max(250, request.top_k * 5)
-        raw_results = session.retriever.retrieve(Query(text=request.question, top_k=large_top_k))
-        results = [r for r in raw_results if r.paper_id == request.paper_id][:request.top_k]
-    else:
-        results = session.retriever.retrieve(Query(text=request.question, top_k=request.top_k))
+    settings = session_manager.settings
+    hybrid_enabled = settings["hybrid_enabled"]
 
+    filters = {}
+    query = Query(
+        text=request.question,
+        top_k=settings["fusion_top_k"] if hybrid_enabled else settings["dense_top_k"],
+        filters=filters,
+        paper_id=request.paper_id,
+    )
+
+    import time
+    start_time = time.time()
+
+    if hybrid_enabled:
+        results = session.retriever.retrieve(query)
+        retriever_instance = session.retriever
+    else:
+        results = session.retriever.dense_retriever.retrieve(query)
+        retriever_instance = session.retriever.dense_retriever
+
+    total_latency_ms = (time.time() - start_time) * 1000
+
+    debug_info = None
+    if hybrid_enabled and isinstance(session.retriever, HybridRetriever):
+        dense_dbg = [
+            DebugRankItem(chunk_id=r.chunk_id, paper_id=r.paper_id, score=r.score)
+            for r in getattr(session.retriever, "last_dense_results", [])
+        ]
+        sparse_dbg = [
+            DebugRankItem(chunk_id=r.chunk_id, paper_id=r.paper_id, score=r.score)
+            for r in getattr(session.retriever, "last_sparse_results", [])
+        ]
+        fused_dbg = [
+            DebugRankItem(
+                chunk_id=r.chunk_id,
+                paper_id=r.paper_id,
+                score=r.score,
+                rank=rank,
+            )
+            for rank, r in enumerate(getattr(session.retriever, "last_fused_results", []), start=1)
+        ]
+        debug_info = RetrievalDebugInfo(
+            dense_latency_ms=getattr(session.retriever, "last_dense_time", 0.0),
+            sparse_latency_ms=getattr(session.retriever, "last_sparse_time", 0.0),
+            fusion_latency_ms=getattr(session.retriever, "last_fusion_time", 0.0),
+            total_latency_ms=total_latency_ms,
+            dense_results=dense_dbg,
+            sparse_results=sparse_dbg,
+            fused_results=fused_dbg,
+        )
+    else:
+        dense_results = getattr(retriever_instance, "last_dense_results", results) if hasattr(retriever_instance, "last_dense_results") else results
+        dense_dbg = [
+            DebugRankItem(chunk_id=r.chunk_id, paper_id=r.paper_id, score=r.score)
+            for r in dense_results
+        ]
+        debug_info = RetrievalDebugInfo(
+            dense_latency_ms=total_latency_ms,
+            sparse_latency_ms=0.0,
+            fusion_latency_ms=0.0,
+            total_latency_ms=total_latency_ms,
+            dense_results=dense_dbg,
+            sparse_results=[],
+            fused_results=[],
+        )
+
+    results = results[:request.top_k]
     answer = session.generator.generate(request.question, results)
+    
     return ChatResponse(
         answer=answer,
         sources=[
@@ -126,11 +272,8 @@ def chat(request: ChatRequest) -> ChatResponse:
             )
             for result in results
         ],
+        debug_info=debug_info,
     )
-
-
-class SummarizeRequest(BaseModel):
-    paper_id: str
 
 
 @router.post("/paper/summarize")
@@ -145,13 +288,12 @@ def summarize_paper(request: SummarizeRequest) -> dict[str, str]:
     paper = next((p for p in session.papers if p.paper_id == request.paper_id), None)
     if not paper:
         raise HTTPException(
-            status_code=444,
+            status_code=404,
             detail=f"Paper with ID '{request.paper_id}' not found in active session.",
         )
 
-    # Find chunks belonging to this paper
     paper_chunks = [
-        chunk for chunk in session.retriever.chunks.values()
+        chunk for chunk in session.retriever.dense_retriever.chunks.values()
         if chunk.paper_id == request.paper_id
     ]
 

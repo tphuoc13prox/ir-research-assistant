@@ -9,18 +9,21 @@ import time
 import threading
 
 from src.chunking.chunker import Chunker
-from src.crawler.arxiv_client import ArxivClient
 from src.crawler.downloader import Downloader
 from src.domain.paper import Paper
+from src.embeddings.interfaces.embedding_service import EmbeddingService
 from src.embeddings.embedder import SentenceTransformerEmbedder
 from src.generation.generator import Generator
 from src.generation.llm_client import ExtractiveLLMClient, LocalFinetunedLLMClient
 from src.generation.prompt_builder import PromptBuilder
-from src.generation.finetune import run_finetuning
 from src.indexing.index_manager import IndexManager
 from src.ingestion.pdf_loader import PdfLoader
 from src.ingestion.text_cleaner import TextCleaner
+from src.retrieval.interfaces.base_retriever import BaseRetriever
 from src.retrieval.dense_retriever import DenseRetriever
+from src.retrieval.bm25_retriever import BM25Retriever
+from src.retrieval.hybrid_retriever import HybridRetriever
+from src.retrieval.cache import RetrievalCache
 
 
 @dataclass(slots=True)
@@ -30,7 +33,7 @@ class TopicSession:
     papers: list[Paper]
     pdf_paths: list[Path]
     chunks_count: int
-    retriever: DenseRetriever
+    retriever: BaseRetriever
     generator: Generator
 
 
@@ -63,14 +66,24 @@ class RagSessionManager:
             "message": "Ready",
             "current": 0,
             "total": 0,
+            "summary": None,
+        }
+
+        # Dynamic retrieval settings
+        self.settings = {
+            "hybrid_enabled": True,
+            "dense_top_k": 5,
+            "sparse_top_k": 5,
+            "fusion_top_k": 5,
+            "rrf_k": 60,
         }
 
     # ------------------------------------------------------------------
     # PUBLIC API
     # ------------------------------------------------------------------
 
-    def start_background(self, topic: str, *, max_papers: int = 10, base_model_name: str | None = None) -> None:
-        """Khởi động pipeline trong background thread, không block request."""
+    def start_background(self, topic: str, papers_metadata: list[dict], *, base_model_name: str | None = None) -> None:
+        """Starts the pipeline in the background thread."""
         clean_topic = " ".join(topic.split())
         if not clean_topic:
             raise ValueError("topic must not be empty")
@@ -80,14 +93,15 @@ class RagSessionManager:
 
         self.status.update({
             "stage": "started",
-            "message": f'Started session for "{clean_topic}"',
+            "message": f'Started Knowledge Base build for "{clean_topic}"',
             "current": 0,
-            "total": max_papers,
+            "total": len(papers_metadata),
+            "summary": None,
         })
 
         thread = threading.Thread(
             target=self._run_session,
-            args=(clean_topic, max_papers),
+            args=(clean_topic, papers_metadata),
             daemon=True,
         )
         thread.start()
@@ -99,112 +113,105 @@ class RagSessionManager:
         return self.active_session
 
     def cleanup(self) -> None:
-        """Xóa sạch các file PDF mới được tải về trong phiên làm việc này khi tat chuong trinh."""
+        """Cleanup newly downloaded PDF files on app shutdown."""
         if not self.downloaded_files:
             return
 
-        print(f"\n[CLEANUP] Dang xoa {len(self.downloaded_files)} file paper moi duoc tai ve...")
+        print(f"\n[CLEANUP] Deleting {len(self.downloaded_files)} temporary PDFs...")
         for path in self.downloaded_files:
             try:
                 if path.exists():
                     path.unlink()
-                    print(f"[CLEANUP] Da xoa file: {path.name}")
+                    print(f"[CLEANUP] Deleted file: {path.name}")
             except Exception as exc:
-                print(f"[CLEANUP] Loi khi xoa file {path}: {exc}")
+                print(f"[CLEANUP] Error deleting file {path}: {exc}")
 
-        # Xoa cac thu muc empty
         dirs_to_check = set(path.parent for path in self.downloaded_files)
         for parent in dirs_to_check:
             try:
                 if parent.exists() and not any(parent.iterdir()):
                     parent.rmdir()
-                    print(f"[CLEANUP] Da xoa thu muc trong: {parent}")
+                    print(f"[CLEANUP] Deleted empty directory: {parent}")
                     
                     grandparent = parent.parent
                     if grandparent.exists() and not any(grandparent.iterdir()):
                         grandparent.rmdir()
-                        print(f"[CLEANUP] Da xoa thu muc phien trong: {grandparent}")
+                        print(f"[CLEANUP] Deleted empty session directory: {grandparent}")
             except Exception:
                 pass
 
     # ------------------------------------------------------------------
-    # INTERNAL PIPELINE (CHẠY TRONG BACKGROUND)
+    # INTERNAL PIPELINE (BACKGROUND RUNNER)
     # ------------------------------------------------------------------
 
-    def _run_session(self, clean_topic: str, max_papers: int) -> None:
+    def _run_session(self, clean_topic: str, papers_metadata: list[dict]) -> None:
         try:
+            start_time = time.time()
             session_dir = self.base_dir / self._slugify(clean_topic)
             papers_dir = session_dir / "papers"
             index_dir = session_dir / "index"
-            finetuned_model_dir = session_dir / "finetuned_model"
 
-            # Check if cache exists
             papers_file = session_dir / "papers.jsonl"
             faiss_index_file = index_dir / "faiss.index"
             chunks_file = index_dir / "chunks.jsonl"
-            model_adapter_file = finetuned_model_dir / "adapter_config.json"
 
+            # 1. Parse and build Paper objects
+            papers = []
+            for p in papers_metadata:
+                papers.append(Paper(
+                    paper_id=p["paper_id"],
+                    title=p["title"],
+                    authors=p["authors"],
+                    abstract=p["abstract"],
+                    source_url=p.get("pdf_url"),
+                    published_at=p.get("published_year"),
+                    metadata=p,
+                ))
+
+            # 2. Check if cache exists
             if (
                 papers_file.exists()
                 and faiss_index_file.exists()
                 and chunks_file.exists()
-                and model_adapter_file.exists()
             ):
-                # Load existing session
                 self.status.update({
-                    "stage": "searching",
-                    "message": "Found existing session. Loading papers...",
-                    "current": 1,
-                    "total": 5,
-                })
-                time.sleep(0.3)
-                
-                # Load papers
-                papers = self._load_papers(papers_file)
-                
-                # Load pdf paths
-                pdf_paths = list(papers_dir.glob("*.pdf"))
-
-                self.status.update({
-                    "stage": "embedding",
-                    "message": "Loading FAISS vector index...",
-                    "current": 3,
-                    "total": 5,
-                })
-                time.sleep(0.3)
-                
-                manager = IndexManager(
-                    index_path=faiss_index_file,
-                    ids_path=index_dir / "ids.txt",
-                    chunks_path=chunks_file,
-                )
-                index, stored_chunks = manager.load()
-
-                self.status.update({
-                    "stage": "finetuning",
-                    "message": "Loading fine-tuned local LLM model...",
+                    "stage": "loading",
+                    "message": "Loading hybrid vector indexes...",
                     "current": 4,
                     "total": 5,
                 })
-                time.sleep(0.3)
+                
+                cached_papers = self._load_papers(papers_file)
+                pdf_paths = list(papers_dir.glob("*.pdf"))
+                
+                manager = IndexManager(
+                    index_path=faiss_index_file,
+                    sparse_index_path=index_dir / "bm25.pkl",
+                    ids_path=index_dir / "ids.txt",
+                    chunks_path=chunks_file,
+                )
+                index, stored_chunks, bm25_instance = manager.load_hybrid()
+
+                dense_retriever = DenseRetriever(self._get_embedder(), index, stored_chunks)
+                sparse_retriever = BM25Retriever(stored_chunks, bm25_instance)
+                retriever = HybridRetriever(
+                    dense_retriever,
+                    sparse_retriever,
+                    rrf_k=self.settings["rrf_k"],
+                )
 
                 session = TopicSession(
                     topic=clean_topic,
                     session_dir=session_dir,
-                    papers=papers,
+                    papers=cached_papers,
                     pdf_paths=pdf_paths,
                     chunks_count=len(stored_chunks),
-                    retriever=DenseRetriever(
-                        self._get_embedder(),
-                        index,
-                        stored_chunks,
-                    ),
+                    retriever=retriever,
                     generator=Generator(
-                        LocalFinetunedLLMClient(finetuned_model_dir, self.base_model_name),
+                        LocalFinetunedLLMClient(self.base_model_name, self.base_model_name),
                         PromptBuilder(),
                     ),
                 )
-
                 self.active_session = session
 
                 self.status.update({
@@ -215,70 +222,34 @@ class RagSessionManager:
                 })
                 return
 
-            # Searching
-            self.status.update({
-                "stage": "searching",
-                "message": "Searching arXiv papers...",
-                "current": 0,
-                "total": max_papers,
-            })
-
+            # Cache does not exist, run builder pipeline
             session_dir.mkdir(parents=True, exist_ok=True)
             papers_dir.mkdir(parents=True, exist_ok=True)
+            index_dir.mkdir(parents=True, exist_ok=True)
 
-            def on_search_progress(msg: str) -> None:
-                self.status.update({
-                    "stage": "searching",
-                    "message": msg,
-                })
+            self._save_papers(papers_file, papers)
 
-            papers = ArxivClient().search_ir_papers(
-                clean_topic,
-                max_results=max_papers,
-                progress_callback=on_search_progress,
-            )
-
-            self.status.update({
-                "stage": "search_complete",
-                "message": f"Found {len(papers)} papers on arXiv",
-                "current": len(papers),
-                "total": len(papers),
-            })
-
-            self._save_papers(session_dir / "papers.jsonl", papers)
-
-            # Download PDFs
-            self.status.update({
-                "stage": "downloading",
-                "message": f"Downloading PDFs (0/{len(papers)})",
-                "current": 0,
-                "total": len(papers),
-            })
-
+            # Stage 1: Download
             pdf_paths = self._download_pdfs(papers, papers_dir)
+            if not pdf_paths:
+                raise ValueError("No PDF papers could be downloaded.")
 
-            # Chunking
-            self.status.update({
-                "stage": "chunking",
-                "message": "Extracting and chunking PDFs...",
-                "current": 0,
-                "total": len(pdf_paths),
-            })
-
+            # Stage 2: Chunking
             chunks = self._build_chunks(pdf_paths, papers)
             if not chunks:
                 raise ValueError("No text chunks extracted")
 
             manager = IndexManager(
                 index_path=index_dir / "faiss.index",
+                sparse_index_path=index_dir / "bm25.pkl",
                 ids_path=index_dir / "ids.txt",
                 chunks_path=index_dir / "chunks.jsonl",
             )
 
-            # Embedding
+            # Stage 3 & 4: Embedding & Indexing
             self.status.update({
                 "stage": "embedding",
-                "message": "Creating embeddings...",
+                "message": "Creating embeddings and indexing...",
                 "current": 0,
                 "total": len(chunks),
             })
@@ -291,46 +262,24 @@ class RagSessionManager:
                     "total": total,
                 })
 
+            embedding_start = time.time()
             index = manager.build(
                 chunks,
                 self._get_embedder(),
                 batch_size=self.batch_size,
                 progress_callback=on_embedding_progress,
             )
+            embedding_time = time.time() - embedding_start
 
-            _, stored_chunks = manager.load()
+            # Load the hybrid indexes
+            index, stored_chunks, bm25_instance = manager.load_hybrid()
 
-            # Fine-tuning local LLM
-            self.status.update({
-                "stage": "finetuning",
-                "message": "Initializing local LLM fine-tuning...",
-                "current": 0,
-                "total": 10,
-            })
-
-            def on_finetune_progress(msg: str) -> None:
-                current_step = 0
-                if "step " in msg:
-                    try:
-                        step_part = msg.split("step ")[1].split(" ")[0]
-                        current_step = int(step_part.split("/")[0])
-                    except Exception:
-                        pass
-                
-                self.status.update({
-                    "stage": "finetuning",
-                    "message": msg,
-                    "current": current_step,
-                    "total": 10,
-                })
-
-            finetuned_model_dir = session_dir / "finetuned_model"
-            
-            run_finetuning(
-                base_model_name=self.base_model_name,
-                chunks_path=index_dir / "chunks.jsonl",
-                output_dir=finetuned_model_dir,
-                progress_callback=on_finetune_progress,
+            dense_retriever = DenseRetriever(self._get_embedder(), index, stored_chunks)
+            sparse_retriever = BM25Retriever(stored_chunks, bm25_instance)
+            retriever = HybridRetriever(
+                dense_retriever,
+                sparse_retriever,
+                rrf_k=self.settings["rrf_k"],
             )
 
             session = TopicSession(
@@ -339,26 +288,38 @@ class RagSessionManager:
                 papers=papers,
                 pdf_paths=pdf_paths,
                 chunks_count=len(chunks),
-                retriever=DenseRetriever(
-                    self._get_embedder(),
-                    index,
-                    stored_chunks,
-                ),
+                retriever=retriever,
                 generator=Generator(
-                    LocalFinetunedLLMClient(finetuned_model_dir, self.base_model_name),
+                    LocalFinetunedLLMClient(self.base_model_name, self.base_model_name),
                     PromptBuilder(),
                 ),
             )
 
             self.active_session = session
-            # Clear downloaded files list to prevent auto-cleanup of this successful session on shutdown
-            self.downloaded_files.clear()
+            self.downloaded_files.clear()  # Keep files for successful sessions
+
+            # Calculate index size
+            index_size = 0
+            if (index_dir / "faiss.index").exists():
+                index_size += (index_dir / "faiss.index").stat().st_size
+            if (index_dir / "bm25.pkl").exists():
+                index_size += (index_dir / "bm25.pkl").stat().st_size
+
+            # Set summary card details
+            summary_info = {
+                "papers_imported": len(pdf_paths),
+                "chunks_generated": len(chunks),
+                "embedding_time_seconds": round(embedding_time, 2),
+                "index_size_bytes": index_size,
+                "total_time_seconds": round(time.time() - start_time, 2),
+            }
 
             self.status.update({
                 "stage": "ready",
                 "message": "Ready",
                 "current": len(chunks),
                 "total": len(chunks),
+                "summary": summary_info,
             })
 
         except Exception as exc:
@@ -376,16 +337,23 @@ class RagSessionManager:
         paths: list[Path] = []
 
         for i, paper in enumerate(papers, start=1):
-            pdf_url = paper.metadata.get("pdf_url")
-            if not pdf_url:
-                continue
-
             self.status.update({
                 "stage": "downloading",
                 "message": f"Downloading ({i}/{len(papers)}): {paper.title}",
                 "current": i,
                 "total": len(papers),
             })
+
+            pdf_path = output_dir / f"{paper.paper_id}.pdf"
+            
+            # Check local cache first to avoid duplicate downloads
+            if pdf_path.exists():
+                paths.append(pdf_path)
+                continue
+
+            pdf_url = paper.metadata.get("pdf_url")
+            if not pdf_url:
+                continue
 
             try:
                 def on_download_progress(msg: str) -> None:
@@ -396,16 +364,16 @@ class RagSessionManager:
                         "total": len(papers),
                     })
 
-                pdf_path = downloader.download(pdf_url, output_dir, progress_callback=on_download_progress)
-                paths.append(pdf_path)
-                self.downloaded_files.append(pdf_path)
+                pdf_file = downloader.download(pdf_url, output_dir, progress_callback=on_download_progress)
+                paths.append(pdf_file)
+                self.downloaded_files.append(pdf_file)
                 time.sleep(self.download_delay_seconds)
             except Exception:
                 continue
 
         return paths
 
-    def _build_chunks(self, pdf_paths: list[Path], papers: list[Paper]):
+    def _build_chunks(self, pdf_paths: list[Path], papers: list[Paper]) -> list[Chunk]:
         loader = PdfLoader()
         cleaner = TextCleaner()
         chunker = Chunker()
@@ -419,8 +387,8 @@ class RagSessionManager:
             title = paper.title if paper else paper_id
 
             self.status.update({
-                "stage": "chunking",
-                "message": f"Chunking ({i}/{total_pdfs}): {title}",
+                "stage": "parsing",
+                "message": f"Parsing and chunking ({i}/{total_pdfs}): {title}",
                 "current": i,
                 "total": total_pdfs,
             })
@@ -439,6 +407,7 @@ class RagSessionManager:
                         "title": paper.title,
                         "source_url": paper.source_url or "",
                         "published_at": paper.published_at or "",
+                        "year": paper.published_at.split("-")[0] if paper.published_at else "N/A",
                     })
                 chunks.append(chunk)
 

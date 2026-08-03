@@ -18,8 +18,8 @@ def _open_browser(host: str, port: int) -> None:
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
     url = f"http://{browser_host}:{port}"
     
-    # Wait for the FastAPI app to be fully responsive
-    for _ in range(50):
+    # Wait for the FastAPI app to be fully responsive (up to 60 seconds)
+    for _ in range(300):
         try:
             with urllib.request.urlopen(f"{url}/health", timeout=0.5) as resp:
                 if resp.status == 200:
@@ -30,8 +30,7 @@ def _open_browser(host: str, port: int) -> None:
             pass
         time.sleep(0.2)
     
-    # Fallback
-    webbrowser.open(url)
+    print(f"Warning: Server did not respond within 60 seconds. Please open {url} manually.")
 
 
 def main() -> None:

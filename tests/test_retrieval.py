@@ -93,3 +93,25 @@ def test_hybrid_retriever_combines_normalized_scores() -> None:
     results = retriever.retrieve(Query("test", top_k=2))
 
     assert [result.chunk_id for result in results] == ["c1", "c2"]
+
+
+def test_hybrid_retriever_rrf_fusion() -> None:
+    dense = StaticRetriever(
+        [
+            RetrievalResult("c1", "p1", 1.0, "c1 doc"),
+            RetrievalResult("c2", "p2", 0.9, "c2 doc"),
+        ]
+    )
+    sparse = StaticRetriever(
+        [
+            RetrievalResult("c2", "p2", 1.0, "c2 doc"),
+            RetrievalResult("c1", "p1", 0.9, "c1 doc"),
+        ]
+    )
+    retriever = HybridRetriever(dense, sparse)
+    results = retriever.retrieve(Query("test", top_k=2))
+    assert len(results) == 2
+    # Verify that scores are valid fusion scores
+    assert results[0].fusion_score is not None
+    assert results[0].dense_rank is not None
+    assert results[0].sparse_rank is not None
