@@ -262,6 +262,10 @@
                     <input type="checkbox" id="setting-hybrid-enabled" checked />
                     <span>Enable Hybrid Retrieval (Dense + Sparse)</span>
                   </label>
+                  <label class="settings-checkbox">
+                    <input type="checkbox" id="setting-ranking-enabled" checked />
+                    <span>Enable Field-Aware Ranking</span>
+                  </label>
                   
                   <div class="settings-grid">
                     <div class="settings-field">
@@ -279,6 +283,14 @@
                     <div class="settings-field">
                       <label for="setting-rrf-k">RRF Penalty Param (K)</label>
                       <input type="number" id="setting-rrf-k" min="1" max="200" value="60" />
+                    </div>
+                    <div class="settings-field">
+                      <label for="setting-dense-w">Dense Weight</label>
+                      <input type="number" id="setting-dense-w" min="0" max="10" step="0.1" value="1.0" />
+                    </div>
+                    <div class="settings-field">
+                      <label for="setting-sparse-w">Sparse Weight</label>
+                      <input type="number" id="setting-sparse-w" min="0" max="10" step="0.1" value="1.0" />
                     </div>
                   </div>
                   <button type="submit" class="btn-primary btn-block">Save Configuration</button>

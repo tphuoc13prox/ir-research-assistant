@@ -115,3 +115,24 @@ def test_hybrid_retriever_rrf_fusion() -> None:
     assert results[0].fusion_score is not None
     assert results[0].dense_rank is not None
     assert results[0].sparse_rank is not None
+
+
+def test_hybrid_retriever_field_boosting() -> None:
+    dense = StaticRetriever(
+        [
+            RetrievalResult("c1", "p1", 1.0, "c1 text", metadata={"title": "Naive Bayes Classifier"}),
+            RetrievalResult("c2", "p2", 0.9, "c2 text", metadata={"title": "Tokyo Olympics Dataset"}),
+        ]
+    )
+    sparse = StaticRetriever(
+        [
+            RetrievalResult("c2", "p2", 1.0, "c2 text", metadata={"title": "Tokyo Olympics Dataset"}),
+            RetrievalResult("c1", "p1", 0.9, "c1 text", metadata={"title": "Naive Bayes Classifier"}),
+        ]
+    )
+    retriever = HybridRetriever(dense, sparse)
+    results1 = retriever.retrieve(Query("tokyo olympics", top_k=2))
+    assert results1[0].chunk_id == "c2"
+
+    results2 = retriever.retrieve(Query("naive bayes", top_k=2))
+    assert results2[0].chunk_id == "c1"

@@ -76,6 +76,8 @@ class RagSessionManager:
             "sparse_top_k": 5,
             "fusion_top_k": 5,
             "rrf_k": 60,
+            "dense_weight": 1.0,
+            "sparse_weight": 1.0,
         }
 
     # ------------------------------------------------------------------
@@ -194,10 +196,14 @@ class RagSessionManager:
 
                 dense_retriever = DenseRetriever(self._get_embedder(), index, stored_chunks)
                 sparse_retriever = BM25Retriever(stored_chunks, bm25_instance)
+                from src.retrieval.fusion.rrf import ReciprocalRankFusion
                 retriever = HybridRetriever(
                     dense_retriever,
                     sparse_retriever,
-                    rrf_k=self.settings["rrf_k"],
+                    fusion_strategy=ReciprocalRankFusion(
+                        k=self.settings["rrf_k"],
+                        weights=(self.settings.get("dense_weight", 1.0), self.settings.get("sparse_weight", 1.0))
+                    )
                 )
 
                 session = TopicSession(
@@ -276,10 +282,14 @@ class RagSessionManager:
 
             dense_retriever = DenseRetriever(self._get_embedder(), index, stored_chunks)
             sparse_retriever = BM25Retriever(stored_chunks, bm25_instance)
+            from src.retrieval.fusion.rrf import ReciprocalRankFusion
             retriever = HybridRetriever(
                 dense_retriever,
                 sparse_retriever,
-                rrf_k=self.settings["rrf_k"],
+                fusion_strategy=ReciprocalRankFusion(
+                    k=self.settings["rrf_k"],
+                    weights=(self.settings.get("dense_weight", 1.0), self.settings.get("sparse_weight", 1.0))
+                )
             )
 
             session = TopicSession(
@@ -374,9 +384,10 @@ class RagSessionManager:
         return paths
 
     def _build_chunks(self, pdf_paths: list[Path], papers: list[Paper]) -> list[Chunk]:
+        from src.chunking.chunk_builder import ChunkBuilder
         loader = PdfLoader()
         cleaner = TextCleaner()
-        chunker = Chunker()
+        chunk_builder = ChunkBuilder(chunk_size=self.chunk_size)
         paper_by_id = {paper.paper_id: paper for paper in papers}
         chunks = []
 
@@ -401,15 +412,13 @@ class RagSessionManager:
             if not text:
                 continue
 
-            for chunk in chunker.split(paper_id, text, chunk_size=self.chunk_size):
-                if paper:
-                    chunk.metadata.update({
-                        "title": paper.title,
-                        "source_url": paper.source_url or "",
-                        "published_at": paper.published_at or "",
-                        "year": paper.published_at.split("-")[0] if paper.published_at else "N/A",
-                    })
-                chunks.append(chunk)
+            if paper:
+                paper_chunks = chunk_builder.build_chunks(paper, text)
+                chunks.extend(paper_chunks)
+            else:
+                from src.chunking.chunker import Chunker
+                paper_chunks = Chunker().split(paper_id, text, chunk_size=self.chunk_size)
+                chunks.extend(paper_chunks)
 
         return chunks
 

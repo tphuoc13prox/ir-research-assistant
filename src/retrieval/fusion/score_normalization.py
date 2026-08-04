@@ -1,4 +1,5 @@
 from src.domain.retrieval_result import RetrievalResult
+from src.domain.query import Query
 from src.retrieval.interfaces.fusion_strategy import FusionStrategy
 
 
@@ -12,6 +13,7 @@ class ScoreNormalizationFusion(FusionStrategy):
         dense_results: list[RetrievalResult],
         sparse_results: list[RetrievalResult],
         top_k: int,
+        query: Query | None = None,
     ) -> list[RetrievalResult]:
         dense_scores = self._normalize(dense_results)
         sparse_scores = self._normalize(sparse_results)

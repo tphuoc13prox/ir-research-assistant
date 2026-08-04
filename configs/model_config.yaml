@@ -5,3 +5,16 @@ embedding_model:
 llm:
   provider: openai
   model: gpt-4.1-mini
+
+retrieval:
+  hybrid_enabled: true
+  ranking:
+    enabled: true
+    rrf_weight: 0.7
+    field_weight: 0.3
+    weights:
+      title: 4.0
+      keywords: 3.0
+      abstract: 2.0
+      body: 1.0
+      phrase: 2.0

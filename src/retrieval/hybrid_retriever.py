@@ -37,14 +37,23 @@ class HybridRetriever(BaseRetriever):
         self.last_fused_results: list[RetrievalResult] = []
 
     def retrieve(self, query: Query) -> list[RetrievalResult]:
+        candidate_k = max(100, query.top_k * 5)
+        hybrid_query = Query(
+            text=query.text,
+            top_k=candidate_k,
+            filters=query.filters,
+            paper_id=query.paper_id,
+            section=query.section,
+        )
+
         def run_dense():
             t0 = time.time()
-            res = self.dense_retriever.retrieve(query)
+            res = self.dense_retriever.retrieve(hybrid_query)
             return res, (time.time() - t0) * 1000
 
         def run_sparse():
             t0 = time.time()
-            res = self.sparse_retriever.retrieve(query)
+            res = self.sparse_retriever.retrieve(hybrid_query)
             return res, (time.time() - t0) * 1000
 
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -60,7 +69,7 @@ class HybridRetriever(BaseRetriever):
         self.last_sparse_results = sparse_results
 
         fusion_start = time.time()
-        fused_results = self.fusion_strategy.fuse(dense_results, sparse_results, query.top_k)
+        fused_results = self.fusion_strategy.fuse(dense_results, sparse_results, query.top_k, query)
         self.last_fusion_time = (time.time() - fusion_start) * 1000
         self.last_fused_results = fused_results
 

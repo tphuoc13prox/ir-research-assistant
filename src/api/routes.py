@@ -23,6 +23,9 @@ class SettingsRequest(BaseModel):
     sparse_top_k: int
     fusion_top_k: int
     rrf_k: int
+    dense_weight: float = Field(default=1.0)
+    sparse_weight: float = Field(default=1.0)
+    ranking_enabled: bool = Field(default=True)
 
 
 class ChatRequest(BaseModel):
@@ -173,11 +176,17 @@ def update_settings(request: SettingsRequest) -> dict[str, str]:
         "sparse_top_k": request.sparse_top_k,
         "fusion_top_k": request.fusion_top_k,
         "rrf_k": request.rrf_k,
+        "dense_weight": request.dense_weight,
+        "sparse_weight": request.sparse_weight,
+        "ranking_enabled": request.ranking_enabled,
     })
     session = session_manager.get_active()
     if session and hasattr(session.retriever, "fusion_strategy"):
         from src.retrieval.fusion.rrf import ReciprocalRankFusion
-        session.retriever.fusion_strategy = ReciprocalRankFusion(k=request.rrf_k)
+        session.retriever.fusion_strategy = ReciprocalRankFusion(
+            k=request.rrf_k,
+            weights=(request.dense_weight, request.sparse_weight)
+        )
     return {"status": "updated"}
 
 
@@ -210,6 +219,23 @@ def chat(request: ChatRequest) -> ChatResponse:
     else:
         results = session.retriever.dense_retriever.retrieve(query)
         retriever_instance = session.retriever.dense_retriever
+
+    # 1. Apply Field-Aware Ranking & Combination if enabled
+    ranking_enabled = settings.get("ranking_enabled", True)
+    if ranking_enabled:
+        from src.retrieval.ranking.ranking_weights import RankingConfig
+        from src.retrieval.ranking.field_aware_ranker import FieldAwareRanker
+        from src.retrieval.ranking.score_combiner import ScoreCombiner
+        
+        rank_config = RankingConfig()
+        ranker = FieldAwareRanker(rank_config)
+        results = ranker.rank(query, results)
+        
+        combiner = ScoreCombiner(
+            rrf_weight=rank_config.rrf_weight,
+            field_weight=rank_config.field_weight
+        )
+        results = combiner.combine_list(results)
 
     total_latency_ms = (time.time() - start_time) * 1000
 

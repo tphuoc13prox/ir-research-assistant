@@ -718,6 +718,9 @@ async function loadSettingsTab() {
     document.querySelector("#setting-sparse-k").value = sets.sparse_top_k;
     document.querySelector("#setting-fusion-k").value = sets.fusion_top_k;
     document.querySelector("#setting-rrf-k").value = sets.rrf_k;
+    document.querySelector("#setting-dense-w").value = sets.dense_weight !== undefined ? sets.dense_weight : 1.0;
+    document.querySelector("#setting-sparse-w").value = sets.sparse_weight !== undefined ? sets.sparse_weight : 1.0;
+    document.querySelector("#setting-ranking-enabled").checked = sets.ranking_enabled !== undefined ? sets.ranking_enabled : true;
   } catch (error) {
     console.error("Error loading settings form values:", error);
   }
@@ -733,6 +736,9 @@ settingsForm.addEventListener("submit", async (event) => {
     sparse_top_k: Number(document.querySelector("#setting-sparse-k").value),
     fusion_top_k: Number(document.querySelector("#setting-fusion-k").value),
     rrf_k: Number(document.querySelector("#setting-rrf-k").value),
+    dense_weight: Number(document.querySelector("#setting-dense-w").value),
+    sparse_weight: Number(document.querySelector("#setting-sparse-w").value),
+    ranking_enabled: document.querySelector("#setting-ranking-enabled").checked,
   };
 
   try {
