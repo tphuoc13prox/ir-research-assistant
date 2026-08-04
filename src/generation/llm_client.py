@@ -36,7 +36,7 @@ class LocalFinetunedLLMClient(LLMClient):
         self.torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
         
         model_dir_path = Path(model_dir)
-        self.tokenizer = AutoTokenizer.from_pretrained(str(model_dir_path))
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir_path.as_posix())
         
         # Load base model
         base_model = AutoModelForCausalLM.from_pretrained(
@@ -47,7 +47,7 @@ class LocalFinetunedLLMClient(LLMClient):
         
         # Load LoRA adapter if it exists
         if (model_dir_path / "adapter_config.json").exists():
-            self.model = PeftModel.from_pretrained(base_model, model_dir_path)
+            self.model = PeftModel.from_pretrained(base_model, model_dir_path.as_posix())
         else:
             self.model = base_model
             

@@ -219,12 +219,27 @@ class RagSessionManager:
                     ),
                 )
                 self.active_session = session
+                # Calculate index size for cached files
+                index_size = 0
+                if (index_dir / "faiss.index").exists():
+                    index_size += (index_dir / "faiss.index").stat().st_size
+                if (index_dir / "bm25.pkl").exists():
+                    index_size += (index_dir / "bm25.pkl").stat().st_size
+
+                summary_info = {
+                    "papers_imported": len(cached_papers),
+                    "chunks_generated": len(stored_chunks),
+                    "embedding_time_seconds": 0.0,
+                    "index_size_bytes": index_size,
+                    "total_time_seconds": round(time.time() - start_time, 2),
+                }
 
                 self.status.update({
                     "stage": "ready",
                     "message": "Ready",
                     "current": len(stored_chunks),
                     "total": len(stored_chunks),
+                    "summary": summary_info,
                 })
                 return
 

@@ -39,7 +39,7 @@ class SourceResponse(BaseModel):
     paper_id: str
     score: float
     text: str
-    metadata: dict[str, str]
+    metadata: dict[str, Any]
 
 
 class DebugRankItem(BaseModel):
