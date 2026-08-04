@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from src.domain.query import Query
@@ -26,6 +27,7 @@ class SettingsRequest(BaseModel):
     dense_weight: float = Field(default=1.0)
     sparse_weight: float = Field(default=1.0)
     ranking_enabled: bool = Field(default=True)
+    base_model_name: str = Field(default="Qwen/Qwen2.5-0.5B-Instruct")
 
 
 class ChatRequest(BaseModel):
@@ -179,14 +181,41 @@ def update_settings(request: SettingsRequest) -> dict[str, str]:
         "dense_weight": request.dense_weight,
         "sparse_weight": request.sparse_weight,
         "ranking_enabled": request.ranking_enabled,
+        "base_model_name": request.base_model_name,
     })
+    session_manager.base_model_name = request.base_model_name
     session = session_manager.get_active()
-    if session and hasattr(session.retriever, "fusion_strategy"):
-        from src.retrieval.fusion.rrf import ReciprocalRankFusion
-        session.retriever.fusion_strategy = ReciprocalRankFusion(
-            k=request.rrf_k,
-            weights=(request.dense_weight, request.sparse_weight)
-        )
+    if session:
+        if hasattr(session.retriever, "fusion_strategy"):
+            from src.retrieval.fusion.rrf import ReciprocalRankFusion
+            session.retriever.fusion_strategy = ReciprocalRankFusion(
+                k=request.rrf_k,
+                weights=(request.dense_weight, request.sparse_weight)
+            )
+
+        current_model = getattr(session.generator.llm_client, "base_model_name", None)
+        if current_model != request.base_model_name:
+            import gc
+            import torch
+            
+            # Clean up VRAM/RAM of previous model
+            if hasattr(session.generator, "llm_client"):
+                if hasattr(session.generator.llm_client, "model"):
+                    del session.generator.llm_client.model
+                if hasattr(session.generator.llm_client, "tokenizer"):
+                    del session.generator.llm_client.tokenizer
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            from src.generation.llm_client import LocalFinetunedLLMClient
+            from src.generation.generator import Generator
+            from src.generation.prompt_builder import PromptBuilder
+
+            session.generator = Generator(
+                LocalFinetunedLLMClient(request.base_model_name, request.base_model_name),
+                PromptBuilder(),
+            )
     return {"status": "updated"}
 
 
@@ -349,3 +378,82 @@ def summarize_paper(request: SummarizeRequest) -> dict[str, str]:
         "title": paper.title,
         "summary": summary,
     }
+
+
+@router.get("/paper/{paper_id}/content")
+def get_paper_content(paper_id: str) -> dict:
+    session = session_manager.get_active()
+    if session is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Please choose a research topic before viewing papers.",
+        )
+
+    paper = next((p for p in session.papers if p.paper_id == paper_id), None)
+    if not paper:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Paper with ID '{paper_id}' not found in active session.",
+        )
+
+    # Gather chunks of this paper
+    paper_chunks = [
+        chunk for chunk in session.retriever.dense_retriever.chunks.values()
+        if chunk.paper_id == paper_id
+    ]
+
+    # Sort chunks in original order
+    def get_chunk_idx(c):
+        cid = c.chunk_id
+        try:
+            if "_chunk_" in cid:
+                return int(cid.split("_chunk_")[-1])
+            if ":" in cid:
+                parts = cid.split(":")
+                if parts[-1].isdigit():
+                    return int(parts[-1])
+        except Exception:
+            pass
+        return 0
+
+    paper_chunks.sort(key=get_chunk_idx)
+
+    return {
+        "paper_id": paper.paper_id,
+        "title": paper.title,
+        "abstract": paper.abstract,
+        "authors": [a.get("name") if isinstance(a, dict) else str(a) for a in paper.authors] if paper.authors else [],
+        "published_at": paper.published_at,
+        "chunks": [
+            {
+                "chunk_id": c.chunk_id,
+                "text": c.text,
+                "page": getattr(c, "page", None),
+                "section": getattr(c, "section", None),
+            }
+            for c in paper_chunks
+        ]
+    }
+
+
+@router.get("/paper/{paper_id}/pdf")
+def get_paper_pdf(paper_id: str) -> FileResponse:
+    session = session_manager.get_active()
+    if session is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Please choose a research topic before viewing PDFs.",
+        )
+
+    pdf_path = session.session_dir / "papers" / f"{paper_id}.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"PDF file for paper '{paper_id}' not found.",
+        )
+
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={paper_id}.pdf"}
+    )

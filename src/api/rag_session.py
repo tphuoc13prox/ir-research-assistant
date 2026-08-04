@@ -78,6 +78,8 @@ class RagSessionManager:
             "rrf_k": 60,
             "dense_weight": 1.0,
             "sparse_weight": 1.0,
+            "ranking_enabled": True,
+            "base_model_name": "Qwen/Qwen2.5-0.5B-Instruct",
         }
 
     # ------------------------------------------------------------------

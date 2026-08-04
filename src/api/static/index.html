@@ -215,7 +215,7 @@
           </section>
 
           <!-- RIGHT SIDEBAR: STATS, SETTINGS & DEVELOPER DEBUG -->
-          <aside class="workspace-info-sidebar">
+          <aside class="workspace-info-sidebar" id="workspace-info-sidebar">
             <div class="sidebar-tabs">
               <button class="tab-btn active" data-tab="tab-stats">📊 Stats</button>
               <button class="tab-btn" data-tab="tab-settings">⚙️ Settings</button>
@@ -266,7 +266,16 @@
                     <input type="checkbox" id="setting-ranking-enabled" checked />
                     <span>Enable Field-Aware Ranking</span>
                   </label>
-                  
+
+                  <div class="settings-field" style="margin-top: 12px; margin-bottom: 12px;">
+                    <label for="setting-base-model" style="font-size: 13px; font-weight: 600; color: var(--text); display: block; margin-bottom: 6px;">Language Model</label>
+                    <select id="setting-base-model" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-family: inherit; font-size: 13px;">
+                      <option value="Qwen/Qwen2.5-0.5B-Instruct">Qwen 2.5 0.5B (Recommended)</option>
+                      <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Higher quality, slower)</option>
+                      <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (Standard Chat)</option>
+                    </select>
+                  </div>
+
                   <div class="settings-grid">
                     <div class="settings-field">
                       <label for="setting-dense-k">Dense Top K Candidates</label>
@@ -386,6 +395,21 @@
               </div>
             </div>
           </aside>
+
+          <!-- RIGHT SIDEBAR: PDF DOCUMENT VIEWER -->
+          <aside id="pdf-viewer-sidebar" class="workspace-info-sidebar is-hidden pdf-viewer-sidebar">
+            <div class="pdf-viewer-header">
+              <div class="pdf-title-container">
+                <span class="pdf-doc-badge">PDF Document</span>
+                <h3 id="pdf-viewer-title">Paper Title</h3>
+              </div>
+              <button type="button" class="btn-subtle" id="close-pdf-btn">Close PDF</button>
+            </div>
+            <div class="pdf-viewer-iframe-wrapper">
+              <iframe id="pdf-viewer-iframe" src="" type="application/pdf" width="100%" height="100%"></iframe>
+            </div>
+          </aside>
+
         </section>
       </div>
     </main>

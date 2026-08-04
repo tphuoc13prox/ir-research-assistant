@@ -56,6 +56,13 @@ const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanels = document.querySelectorAll(".tab-panel");
 const settingsForm = document.querySelector("#settings-form");
 
+// DOM Elements - PDF Viewer Sidebar
+const workspaceInfoSidebar = document.querySelector("#workspace-info-sidebar");
+const pdfViewerSidebar = document.querySelector("#pdf-viewer-sidebar");
+const pdfViewerTitle = document.querySelector("#pdf-viewer-title");
+const pdfViewerIframe = document.querySelector("#pdf-viewer-iframe");
+const closePdfBtn = document.querySelector("#close-pdf-btn");
+
 // Right Sidebar - Stats Panel UI
 const statsPapers = document.querySelector("#stats-papers");
 const statsChunks = document.querySelector("#stats-chunks");
@@ -503,6 +510,11 @@ function renderPapersSidebar(papers) {
     activeScopeBadge.className = "scope-badge global";
     activeScopeBadge.textContent = "Global Scope";
     questionInput.placeholder = "Ask a question about all papers...";
+
+    // Reset PDF Viewer and show Stats panel
+    pdfViewerIframe.src = "";
+    pdfViewerSidebar.classList.add("is-hidden");
+    workspaceInfoSidebar.classList.remove("is-hidden");
   });
   papersList.appendChild(globalReset);
 }
@@ -515,50 +527,19 @@ async function handlePaperClick(item, paperId, paperTitle) {
   activePaperTitle = paperTitle;
 
   activeScopeBadge.className = "scope-badge paper";
-  // Truncate scope badge text if title is long
   const displayTitle = paperTitle.length > 30 ? `${paperTitle.slice(0, 30)}...` : paperTitle;
   activeScopeBadge.textContent = displayTitle;
 
   questionInput.placeholder = `Ask a question about "${displayTitle}"...`;
   questionInput.focus();
 
-  // Create loading dot element
-  const tempId = "temp-msg-" + Date.now();
-  const article = document.createElement("article");
-  article.className = "message assistant";
-  article.id = tempId;
+  // Load original PDF in right-side sidebar iframe
+  pdfViewerTitle.textContent = paperTitle;
+  pdfViewerIframe.src = `/paper/${paperId}/pdf`;
   
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.innerHTML = `Summarizing: <em>"${escapeHtml(paperTitle)}"</em>...<br><span class="loading-dots">Generating summary<span>.</span><span>.</span><span>.</span></span>`;
-  
-  article.appendChild(bubble);
-  messagesContainer.appendChild(article);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-  try {
-    const response = await fetch("/paper/summarize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ paper_id: paperId }),
-    });
-
-    const tempElement = document.getElementById(tempId);
-    if (tempElement) tempElement.remove();
-
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || "Could not generate summary");
-    }
-
-    addMessage("assistant", `### Summary of "${payload.title}"\n\n${payload.summary}`);
-  } catch (error) {
-    const tempElement = document.getElementById(tempId);
-    if (tempElement) tempElement.remove();
-    addMessage("assistant", `Failed to load paper summary: ${error.message}`);
-  }
+  // Show PDF viewer panel and hide Stats panel
+  workspaceInfoSidebar.classList.add("is-hidden");
+  pdfViewerSidebar.classList.remove("is-hidden");
 }
 
 function addMessage(role, text, sources = []) {
@@ -570,6 +551,13 @@ function addMessage(role, text, sources = []) {
   bubble.innerHTML = formatMarkdown(text);
 
   if (sources.length > 0) {
+    const details = document.createElement("details");
+    details.className = "sources-accordion";
+
+    const summary = document.createElement("summary");
+    summary.textContent = `Show Citations (${sources.length} sources)`;
+    details.appendChild(summary);
+
     const sourceList = document.createElement("div");
     sourceList.className = "sources";
 
@@ -585,7 +573,8 @@ function addMessage(role, text, sources = []) {
       sourceList.appendChild(item);
     });
 
-    bubble.appendChild(sourceList);
+    details.appendChild(sourceList);
+    bubble.appendChild(details);
   }
 
   article.appendChild(bubble);
@@ -721,6 +710,7 @@ async function loadSettingsTab() {
     document.querySelector("#setting-dense-w").value = sets.dense_weight !== undefined ? sets.dense_weight : 1.0;
     document.querySelector("#setting-sparse-w").value = sets.sparse_weight !== undefined ? sets.sparse_weight : 1.0;
     document.querySelector("#setting-ranking-enabled").checked = sets.ranking_enabled !== undefined ? sets.ranking_enabled : true;
+    document.querySelector("#setting-base-model").value = sets.base_model_name !== undefined ? sets.base_model_name : "Qwen/Qwen2.5-0.5B-Instruct";
   } catch (error) {
     console.error("Error loading settings form values:", error);
   }
@@ -739,6 +729,7 @@ settingsForm.addEventListener("submit", async (event) => {
     dense_weight: Number(document.querySelector("#setting-dense-w").value),
     sparse_weight: Number(document.querySelector("#setting-sparse-w").value),
     ranking_enabled: document.querySelector("#setting-ranking-enabled").checked,
+    base_model_name: document.querySelector("#setting-base-model").value,
   };
 
   try {
@@ -865,5 +856,24 @@ async function checkActiveSession() {
     console.error("Active session initialization check failed:", error);
   }
 }
+
+// Close PDF Viewer Panel and return to Stats panel
+closePdfBtn.addEventListener("click", () => {
+  pdfViewerIframe.src = "";
+  pdfViewerSidebar.classList.add("is-hidden");
+  workspaceInfoSidebar.classList.remove("is-hidden");
+  
+  // Reset active state on paper items
+  document.querySelectorAll(".paper-item").forEach(el => el.classList.remove("active"));
+  const paperItems = document.querySelectorAll(".paper-item");
+  const lastItem = paperItems[paperItems.length - 1];
+  if (lastItem) lastItem.classList.add("active");
+  
+  activePaperId = null;
+  activePaperTitle = null;
+  activeScopeBadge.className = "scope-badge global";
+  activeScopeBadge.textContent = "Global Scope";
+  questionInput.placeholder = "Ask a question about all papers...";
+});
 
 checkActiveSession();
