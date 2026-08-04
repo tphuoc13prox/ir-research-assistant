@@ -39,10 +39,11 @@ The system separates discovery concerns from ingestion index building:
 *   `src/embeddings`: Decooupled vector embedding interface `EmbeddingService` and `SentenceTransformer` implementation.
 *   `src/indexing`: Builders (`DenseIndexBuilder`, `SparseIndexBuilder`) and `IndexManager` for persistent vector database compilation.
 *   `src/retrieval`: Parallel retrieval handlers (`DenseRetriever`, `BM25Retriever`, `HybridRetriever`) and `ReciprocalRankFusion` strategy.
-*   `src/domain`: Base query models and result representations (`Query`, `RetrievalResult`).
+*   `src/retrieval/ranking`: **Field-Aware Ranking Stage (Level 2)** containing `FieldAwareRanker`, `ScoreCombiner`, and `RankingConfig` configuration parser.
+*   `src/domain`: Base query models and result representations (`Query`, `RetrievalResult`, `RankingFeatures`).
 *   `src/crawler`: PDF downloading and HTTP rate-limiting backoff.
 *   `src/ingestion`: PDF parsing, structures cleanups, and layout extraction.
-*   `src/chunking`: Recursive splitters and text segment division.
+*   `src/chunking`: Recursive splitters and text segment division including `ChunkBuilder` metadata enricher.
 *   `src/api`: Web clients, FastAPI routes, and telemetry.
 *   `src/evaluation`: Benchmark metric calculation runner (`Recall`, `MRR`, `nDCG`).
 
