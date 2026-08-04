@@ -1,0 +1,35 @@
+# Local Data & Indices (Crucial to ignore)
+data/
+sessions/
+*.index
+*.pkl
+*.jsonl
+
+# Python cache & logs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+*.log
+
+# Environment & packages
+.venv/
+venv/
+env/
+ENV/
+dist/
+build/
+*.egg-info/
+
+# IDE & Editor files
+.vscode/
+.idea/
+.project
+.pydevproject
+
+# OS files
+Thumbs.db
+db.properties
+.DS_Store
