@@ -28,6 +28,7 @@ class SettingsRequest(BaseModel):
     sparse_weight: float = Field(default=1.0)
     ranking_enabled: bool = Field(default=True)
     base_model_name: str = Field(default="Qwen/Qwen2.5-0.5B-Instruct")
+    relevance_threshold: float = Field(default=0.35)
 
 
 class ChatRequest(BaseModel):
@@ -42,6 +43,7 @@ class SourceResponse(BaseModel):
     score: float
     text: str
     metadata: dict[str, Any]
+    explanation: dict[str, Any] = Field(default_factory=dict)
 
 
 class DebugRankItem(BaseModel):
@@ -182,6 +184,7 @@ def update_settings(request: SettingsRequest) -> dict[str, str]:
         "sparse_weight": request.sparse_weight,
         "ranking_enabled": request.ranking_enabled,
         "base_model_name": request.base_model_name,
+        "relevance_threshold": request.relevance_threshold,
     })
     session_manager.base_model_name = request.base_model_name
     session = session_manager.get_active()
@@ -234,10 +237,15 @@ def chat(request: ChatRequest) -> ChatResponse:
     filters = {}
     query = Query(
         text=request.question,
-        top_k=settings["fusion_top_k"] if hybrid_enabled else settings["dense_top_k"],
+        top_k=30,
         filters=filters,
         paper_id=request.paper_id,
     )
+
+    qu_enabled = settings.get("query_understanding", {}).get("enabled", True)
+    if qu_enabled:
+        from src.query_understanding.query_parser import parse_query
+        query = parse_query(query)
 
     import time
     start_time = time.time()
@@ -248,6 +256,11 @@ def chat(request: ChatRequest) -> ChatResponse:
     else:
         results = session.retriever.dense_retriever.retrieve(query)
         retriever_instance = session.retriever.dense_retriever
+
+    filter_enabled = settings.get("query_understanding", {}).get("metadata_filter", True)
+    if qu_enabled and filter_enabled:
+        from src.retrieval.filtering.metadata_filter import filter_results
+        results = filter_results(results, query)
 
     # 1. Apply Field-Aware Ranking & Combination if enabled
     ranking_enabled = settings.get("ranking_enabled", True)
@@ -260,11 +273,21 @@ def chat(request: ChatRequest) -> ChatResponse:
         ranker = FieldAwareRanker(rank_config)
         results = ranker.rank(query, results)
         
+        intent_enabled = settings.get("query_understanding", {}).get("intent_ranking", True)
+        if qu_enabled and intent_enabled:
+            from src.retrieval.ranking.intent_ranker import IntentRanker
+            intent_ranker = IntentRanker()
+            results = intent_ranker.rank(query, results)
+        
         combiner = ScoreCombiner(
             rrf_weight=rank_config.rrf_weight,
             field_weight=rank_config.field_weight
         )
         results = combiner.combine_list(results)
+
+    from src.retrieval.ranking.explanation_generator import generate_explanation
+    for r in results:
+        r.explanation = generate_explanation(r, query)
 
     total_latency_ms = (time.time() - start_time) * 1000
 
@@ -312,7 +335,9 @@ def chat(request: ChatRequest) -> ChatResponse:
             fused_results=[],
         )
 
-    results = results[:request.top_k]
+    threshold = settings.get("relevance_threshold", 0.35)
+    results = [r for r in results if r.score >= threshold]
+    results = results[:30]
     answer = session.generator.generate(request.question, results)
     
     return ChatResponse(
@@ -324,6 +349,7 @@ def chat(request: ChatRequest) -> ChatResponse:
                 score=result.score,
                 text=result.text,
                 metadata=result.metadata,
+                explanation=getattr(result, "explanation", {}),
             )
             for result in results
         ],
@@ -457,3 +483,43 @@ def get_paper_pdf(paper_id: str) -> FileResponse:
         media_type="application/pdf",
         headers={"Content-Disposition": f"inline; filename={paper_id}.pdf"}
     )
+
+
+import os
+import sys
+import signal
+import threading
+import time
+
+last_heartbeat_time = time.time()
+
+def monitor_heartbeat():
+    global last_heartbeat_time
+    # Give the browser 15 seconds to open and make the first heartbeat request
+    time.sleep(15)
+    while True:
+        time.sleep(3)
+        if time.time() - last_heartbeat_time > 8.0:
+            print("No active browser connection detected. Automatically shutting down server...")
+            try:
+                os.kill(os.getppid(), signal.SIGTERM)
+            except Exception:
+                pass
+            try:
+                os.kill(os.getpid(), signal.SIGTERM)
+            except Exception:
+                pass
+            os._exit(0)
+
+# Avoid starting the monitor thread when running automated tests
+is_testing = any("pytest" in arg.lower() or "unittest" in arg.lower() for arg in sys.argv)
+if not is_testing:
+    print("[SERVER] Starting connection heartbeat monitor...")
+    threading.Thread(target=monitor_heartbeat, daemon=True).start()
+
+
+@router.post("/heartbeat")
+def heartbeat() -> dict[str, str]:
+    global last_heartbeat_time
+    last_heartbeat_time = time.time()
+    return {"status": "ok"}

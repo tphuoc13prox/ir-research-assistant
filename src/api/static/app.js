@@ -711,6 +711,7 @@ async function loadSettingsTab() {
     document.querySelector("#setting-sparse-w").value = sets.sparse_weight !== undefined ? sets.sparse_weight : 1.0;
     document.querySelector("#setting-ranking-enabled").checked = sets.ranking_enabled !== undefined ? sets.ranking_enabled : true;
     document.querySelector("#setting-base-model").value = sets.base_model_name !== undefined ? sets.base_model_name : "Qwen/Qwen2.5-0.5B-Instruct";
+    document.querySelector("#setting-relevance-threshold").value = sets.relevance_threshold !== undefined ? sets.relevance_threshold : 0.35;
   } catch (error) {
     console.error("Error loading settings form values:", error);
   }
@@ -730,6 +731,7 @@ settingsForm.addEventListener("submit", async (event) => {
     sparse_weight: Number(document.querySelector("#setting-sparse-w").value),
     ranking_enabled: document.querySelector("#setting-ranking-enabled").checked,
     base_model_name: document.querySelector("#setting-base-model").value,
+    relevance_threshold: Number(document.querySelector("#setting-relevance-threshold").value),
   };
 
   try {
@@ -877,3 +879,16 @@ closePdfBtn.addEventListener("click", () => {
 });
 
 checkActiveSession();
+
+// Start keep-alive heartbeat loop to prevent server shutdown
+function startHeartbeat() {
+  // Send heartbeat immediately on page load
+  fetch("/heartbeat", { method: "POST" }).catch(() => {});
+  
+  // Periodic ping every 2 seconds
+  setInterval(() => {
+    fetch("/heartbeat", { method: "POST" }).catch(() => {});
+  }, 2000);
+}
+
+startHeartbeat();

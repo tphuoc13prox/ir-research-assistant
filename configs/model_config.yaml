@@ -18,3 +18,8 @@ retrieval:
       abstract: 2.0
       body: 1.0
       phrase: 2.0
+  query_understanding:
+    enabled: true
+    metadata_filter: true
+    intent_ranking: true
+  relevance_threshold: 0.35

@@ -81,7 +81,10 @@ class ArxivClient:
         category: str = "cs.IR",
         progress_callback: Callable[[str], None] | None = None,
     ) -> list[Paper]:
-        arxiv_query = f"cat:{category} AND all:{query}" if query else f"cat:{category}"
+        if query:
+            arxiv_query = f"(cat:cs.IR OR cat:cs.CL OR cat:cs.LG) AND all:{query}"
+        else:
+            arxiv_query = f"cat:{category}"
         return [self._to_paper(item) for item in self.search(arxiv_query, max_results, progress_callback=progress_callback)]
 
     def _parse_feed(self, xml_text: str) -> list[dict[str, Any]]:

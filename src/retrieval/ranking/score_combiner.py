@@ -29,7 +29,8 @@ class ScoreCombiner:
                     f.keyword_score + 
                     f.abstract_score + 
                     f.body_score + 
-                    f.phrase_score
+                    f.phrase_score +
+                    getattr(f, "intent_score", 0.0)
                 )
             else:
                 f_score = 0.0
@@ -69,6 +70,7 @@ class ScoreCombiner:
                 f"  Abstract Score: {f.abstract_score:.4f}\n"
                 f"  Body Score: {f.body_score:.4f}\n"
                 f"  Phrase Score: {f.phrase_score:.4f}\n"
+                f"  Intent Score: {getattr(f, 'intent_score', 0.0):.4f}\n"
                 f"  Final Score: {final_score:.4f}"
             )
             combined_results.append(res)

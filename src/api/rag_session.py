@@ -59,6 +59,7 @@ class RagSessionManager:
         self._embedder: SentenceTransformerEmbedder | None = None
         
         self.downloaded_files: list[Path] = []
+        self.created_session_dirs: list[Path] = []
         atexit.register(self.cleanup)
 
         self.status = {
@@ -80,6 +81,7 @@ class RagSessionManager:
             "sparse_weight": 1.0,
             "ranking_enabled": True,
             "base_model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+            "relevance_threshold": 0.35,
         }
 
     # ------------------------------------------------------------------
@@ -117,11 +119,20 @@ class RagSessionManager:
         return self.active_session
 
     def cleanup(self) -> None:
-        """Cleanup newly downloaded PDF files on app shutdown."""
-        if not self.downloaded_files:
-            return
+        """Cleanup newly created session directories and downloaded PDF files on app shutdown."""
+        import shutil
 
-        print(f"\n[CLEANUP] Deleting {len(self.downloaded_files)} temporary PDFs...")
+        # Wipe out entire session directories created in this run
+        for session_dir in list(self.created_session_dirs):
+            try:
+                if session_dir.exists():
+                    shutil.rmtree(session_dir)
+                    print(f"[CLEANUP] Deleted session directory: {session_dir}")
+            except Exception as exc:
+                print(f"[CLEANUP] Error deleting session directory {session_dir}: {exc}")
+        self.created_session_dirs.clear()
+
+        # Clean up any leftover downloaded files
         for path in self.downloaded_files:
             try:
                 if path.exists():
@@ -129,20 +140,6 @@ class RagSessionManager:
                     print(f"[CLEANUP] Deleted file: {path.name}")
             except Exception as exc:
                 print(f"[CLEANUP] Error deleting file {path}: {exc}")
-
-        dirs_to_check = set(path.parent for path in self.downloaded_files)
-        for parent in dirs_to_check:
-            try:
-                if parent.exists() and not any(parent.iterdir()):
-                    parent.rmdir()
-                    print(f"[CLEANUP] Deleted empty directory: {parent}")
-                    
-                    grandparent = parent.parent
-                    if grandparent.exists() and not any(grandparent.iterdir()):
-                        grandparent.rmdir()
-                        print(f"[CLEANUP] Deleted empty session directory: {grandparent}")
-            except Exception:
-                pass
 
     # ------------------------------------------------------------------
     # INTERNAL PIPELINE (BACKGROUND RUNNER)
@@ -172,12 +169,12 @@ class RagSessionManager:
                     metadata=p,
                 ))
 
-            # 2. Check if cache exists
-            if (
-                papers_file.exists()
-                and faiss_index_file.exists()
-                and chunks_file.exists()
-            ):
+            # Register session dir for cleanup on shutdown
+            if session_dir not in self.created_session_dirs:
+                self.created_session_dirs.append(session_dir)
+
+            # 2. Check if cache exists (Disabled: always download and index fresh)
+            if False:
                 self.status.update({
                     "stage": "loading",
                     "message": "Loading hybrid vector indexes...",
@@ -373,8 +370,8 @@ class RagSessionManager:
 
             pdf_path = output_dir / f"{paper.paper_id}.pdf"
             
-            # Check local cache first to avoid duplicate downloads
-            if pdf_path.exists():
+            # Check local cache first to avoid duplicate downloads (Disabled: always download fresh)
+            if False and pdf_path.exists():
                 paths.append(pdf_path)
                 continue
 

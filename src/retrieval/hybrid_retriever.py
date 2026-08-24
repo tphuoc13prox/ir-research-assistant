@@ -44,6 +44,13 @@ class HybridRetriever(BaseRetriever):
             filters=query.filters,
             paper_id=query.paper_id,
             section=query.section,
+            metadata=query.metadata,
+            topic=query.topic,
+            keywords=query.keywords,
+            intent=query.intent,
+            boost_terms=query.boost_terms,
+            exclude_terms=query.exclude_terms,
+            metadata_constraints=query.metadata_constraints,
         )
 
         def run_dense():

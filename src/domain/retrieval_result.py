@@ -9,6 +9,7 @@ class RankingFeatures:
     abstract_score: float = 0.0
     body_score: float = 0.0
     phrase_score: float = 0.0
+    intent_score: float = 0.0
     final_score: float = 0.0
 
 
@@ -25,3 +26,4 @@ class RetrievalResult:
     fusion_score: float | None = None
     metadata: dict[str, str] = field(default_factory=dict)
     ranking_features: RankingFeatures | None = None
+    explanation: dict = field(default_factory=dict)
