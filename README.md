@@ -1,50 +1,59 @@
-# IR Research Assistant (Phase 1) 🔍🤖
+# IR Research Assistant (Level 3 Upgrade) 🔍🤖
 
-A local, production-quality hybrid (Dense + Lexical) information retrieval system designed to discover, crawl, ingest, and index research papers. 
+A local, production-quality hybrid (Dense + Lexical) information retrieval system designed to discover, crawl, ingest, and index research papers with intelligent query understanding and intent-aware ranking.
 
-This project forms the technical foundation for future phases. In Phase 1, it implements a highly decoupled retrieval pipeline using an **Embedding Service**, a **Paper Discovery Provider** interface, a parallel execution engine, **Reciprocal Rank Fusion (RRF)**, and a developer telemetric debug console.
+This repository implements a highly decoupled retrieval pipeline using an **Embedding Service**, a **Paper Discovery Provider** interface, a parallel execution engine, **Reciprocal Rank Fusion (RRF)**, **Field-Aware Ranking (Level 2)**, and **Intelligent Query Understanding & Intent-Aware Retrieval (Level 3)**.
 
 ---
 
 ## 🗺️ Project Roadmap
 
-- **Phase 1: Hybrid Retrieval Engine (Current Phase)**
-  - Infrastructure-only implementation focusing on stable paper metadata discovery, concurrent dense (FAISS) + sparse (BM25) vector index building, Reciprocal Rank Fusion ranking, retrieval caching, and telemetry logging.
+- **Phase 1: Intelligent Hybrid Retrieval Engine (Current Status - Level 3 Complete)**
+  - Stable paper metadata discovery across `cs.IR`, `cs.CL`, and `cs.LG` categories.
+  - Concurrent dense (FAISS) + sparse (BM25) vector index building.
+  - Reciprocal Rank Fusion (RRF) and Field-Aware Ranking (Level 2).
+  - Intelligent Query Parsing, Metadata Filtering, and Intent-Aware Re-ranking (Level 3).
+  - Dynamic Relevance Threshold filtering & 30-result ceiling control.
+  - Browser-heartbeat-monitored automatic server shutdown and temporary index directory cleanup.
 - **Phase 2: Research Workspace (Future Phase)**
-  - Introduces selected paper workspaces, interactive document annotation tools, and local LLM document synthesis capabilities.
+  - Introduces selected paper workspaces, interactive document annotation tools, and local LLM document synthesis.
 - **Phase 3: Research Copilot (Future Phase)**
   - Implements multi-document reasoning agents, adaptive flashcards creator, and automatic personalized learning roadmaps.
 
 ---
 
-## 🌟 Two-Stage Selected Paper Workflow
+## 🌟 Advanced Level 3 Retrieval Pipeline
 
-The system separates discovery concerns from ingestion index building:
+The search and retrieval flow is fully decoupled to ensure optimal information retrieval correctness:
 
-### 1. Stage 1: Metadata Paper Discovery
-- **Discovery Search**: Input a query topic. The system calls the `DiscoveryService` to pull matching paper records (titles, authors, categories, abstracts, publish dates) from selected repositories without downloading any files.
-- **Curation Selection**: Discovered papers are presented in a selection table. Use checkboxes (with **Select All** and **Clear Selection** helpers) to pick which exact works to include.
+$$\text{Query} \rightarrow \text{Query Parser} \rightarrow \text{Candidate Retrieval} \rightarrow \text{Metadata Filter} \rightarrow \text{Field-Aware Ranker} \rightarrow \text{Intent-Aware Ranker} \rightarrow \text{Score Combiner} \rightarrow \text{LLM}$$
 
-### 2. Stage 2: Knowledge Base Builder
-- **Checks Cache**: When you click **Import Selected**, the system begins sequential ingestion. It first checks the local directories to see if files already exist on disk to bypass redundant network requests.
-- **Stage Checklist**: Watch the progress checklist update in real-time through *Downloading PDFs*, *Parsing text*, *Chunking*, and *Embedding indices creation*.
-- **Summary Card**: Upon completion, a summary card shows build statistics: imported papers, generated chunks count, vector encoding times, and index space usage.
-- **Dashboard Workspace**: Ask questions in the chatbot. Use the sidebar status badges to monitor ingestion, customize RRF penalty parameters, inspect retrieval latency metrics, and read intermediate ranked lists.
+### 1. Stage 1: Metadata Paper Discovery & Ingestion
+- **Discovery Search**: Input a query topic. The crawler queries arXiv (broadened to `cs.IR`, `cs.CL`, and `cs.LG` categories) to find relevant works.
+- **Temporary Cache Ingestion**: Discovered papers are checked out. The downloader pulls fresh PDFs, parses text, constructs chunks, computes embeddings, and builds hybrid indices inside temporary workspace directories.
+- **Cleanup on Shutdown**: Once you close the browser tab, the server automatically shuts down via connection heartbeat within 8 seconds and recursively deletes all temporary index files and downloaded PDFs.
+
+### 2. Stage 2: Intent-Aware Retrieval & Ranking
+- **Query Parser**: Analyzes user questions to extract year constraints (e.g. `before 2026`, `between 2020 and 2025`), intent categories (`survey`, `comparison`, `dataset`), boost terms, and exclusion words (e.g. `-cnn`).
+- **Metadata Filtering**: Discards non-matching document chunks before mathematical scoring to optimize CPU cycles.
+- **Intent-Aware Re-ranking**: Adjusts ranking scores dynamically using keyword focus weights and title/abstract boosts.
+- **Dynamic Relevance Threshold**: Users can adjust a relevance score threshold in the settings panel to dynamically filter out low-relevance results (up to a maximum cap of 30 results).
 
 ---
 
 ## 🛠️ Project Structure
 
-*   `src/paper_discovery`: Isolated discovery layer defining `PaperProvider` abstractions and `ArxivProvider` implementation.
-*   `src/embeddings`: Decooupled vector embedding interface `EmbeddingService` and `SentenceTransformer` implementation.
+*   `src/query_understanding`: Stateless regular-expression **Query Parser** extracting intent and metadata constraints.
+*   `src/retrieval/filtering`: Stateless **Metadata Filter** applying hard constraints on candidate lists.
+*   `src/retrieval/ranking`: **Field-Aware & Intent-Aware Ranker** containing re-ranking logic, score combiners, and presentation-decoupled explainability generators.
+*   `src/paper_discovery`: Discovery layer defining `PaperProvider` abstractions and `ArxivProvider` implementation.
+*   `src/embeddings`: Decoupled vector embedding interface `EmbeddingService` and `SentenceTransformer` implementation.
 *   `src/indexing`: Builders (`DenseIndexBuilder`, `SparseIndexBuilder`) and `IndexManager` for persistent vector database compilation.
 *   `src/retrieval`: Parallel retrieval handlers (`DenseRetriever`, `BM25Retriever`, `HybridRetriever`) and `ReciprocalRankFusion` strategy.
-*   `src/retrieval/ranking`: **Field-Aware Ranking Stage (Level 2)** containing `FieldAwareRanker`, `ScoreCombiner`, and `RankingConfig` configuration parser.
-*   `src/domain`: Base query models and result representations (`Query`, `RetrievalResult`, `RankingFeatures`).
-*   `src/crawler`: PDF downloading and HTTP rate-limiting backoff.
-*   `src/ingestion`: PDF parsing, structures cleanups, and layout extraction.
-*   `src/chunking`: Recursive splitters and text segment division including `ChunkBuilder` metadata enricher.
-*   `src/api`: Web clients, FastAPI routes, and telemetry.
+*   `src/domain`: Dataclass domain representations (`Query`, `RetrievalResult`, `RankingFeatures`).
+*   `src/crawler`: PDF downloading and rate-limiting backoff.
+*   `src/chunking`: Recursive splitters and text segment division.
+*   `src/api`: Web clients, FastAPI routes, session managers, and heartbeat shutdown monitor.
 *   `src/evaluation`: Benchmark metric calculation runner (`Recall`, `MRR`, `nDCG`).
 
 ---
