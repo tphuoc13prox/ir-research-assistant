@@ -81,8 +81,69 @@ def health_check() -> dict[str, str]:
 @router.get("/session/search")
 def search_papers(query: str, limit: int = 10) -> list[dict]:
     try:
+        from src.query_understanding.query_parser import parse_query
+        from src.domain.query import Query
+
+        # Parse search query to extract constraints
+        q_obj = Query(text=query, top_k=limit)
+        parsed_q = parse_query(q_obj)
+        
+        # Build clean query for arXiv API
+        topic_query = parsed_q.topic
+        if parsed_q.boost_terms:
+            topic_query += " " + " ".join(f'"{term}"' for term in parsed_q.boost_terms)
+        
+        if not topic_query.strip():
+            topic_query = query
+
+        # Fetch more candidates to allow filtering
+        fetch_limit = max(limit * 3, 30)
         service = DiscoveryService()
-        discovered = service.search_papers(query, limit=limit)
+        discovered = service.search_papers(topic_query, limit=fetch_limit)
+        
+        # Filter papers based on parsed year constraints and exclusions
+        filtered = []
+        year_constraints = parsed_q.metadata_constraints.get("year", {})
+        
+        for p in discovered:
+            # 1. Check year constraints
+            p_year = None
+            try:
+                p_year = int(p.published_year)
+            except Exception:
+                pass
+                
+            if p_year is not None:
+                passed_year = True
+                for op, val in year_constraints.items():
+                    if op == ">" and not (p_year > val):
+                        passed_year = False
+                    elif op == ">=" and not (p_year >= val):
+                        passed_year = False
+                    elif op == "<" and not (p_year < val):
+                        passed_year = False
+                    elif op == "<=" and not (p_year <= val):
+                        passed_year = False
+                if not passed_year:
+                    continue
+            elif year_constraints:
+                continue
+                
+            # 2. Check exclusion terms
+            passed_exclusion = True
+            text_for_checking = (p.title + " " + p.abstract + " " + " ".join(p.categories)).lower()
+            for exc_term in parsed_q.exclude_terms:
+                if exc_term in text_for_checking:
+                    passed_exclusion = False
+                    break
+            if not passed_exclusion:
+                continue
+                
+            filtered.append(p)
+            
+        # Return at most 'limit' results
+        filtered = filtered[:limit]
+        
         return [
             {
                 "paper_id": p.paper_id,
@@ -94,7 +155,7 @@ def search_papers(query: str, limit: int = 10) -> list[dict]:
                 "categories": p.categories,
                 "doi": p.doi,
             }
-            for p in discovered
+            for p in filtered
         ]
     except Exception as exc:
         err_msg = str(exc)
